@@ -8,6 +8,7 @@ import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { lrPdf } from '../services/pdfService.js';
 import { config } from '../config/config.js';
+import { creditCheck, syncCommission } from '../services/accountService.js';
 
 const POP = [
   { path: 'bookingBranch', select: 'name code address phone' },
@@ -30,21 +31,6 @@ const upsertParty = async (snap, branchId) => {
   return { party: p._id, name: snap.name, mobile: snap.mobile, address: snap.address, gstin: snap.gstin };
 };
 
-/** Credit control warning (point 14) – compares party credit limit with unbilled TBB/to-pay freight.
- *  Full outstanding (bills − payments) arrives with the phase 2 ledger. */
-const creditWarning = async (partyId, adding) => {
-  const p = await Party.findById(partyId).lean();
-  if (!p?.creditLimit) return null;
-  const [agg] = await LR.aggregate([
-    { $match: { billingParty: p._id, paymentType: 'tbb', billed: false, status: { $ne: 'cancelled' } } },
-    { $group: { _id: null, sum: { $sum: '$freight.total' } } },
-  ]);
-  const used = (agg?.sum || 0) + adding;
-  return used > p.creditLimit
-    ? `Credit limit crossed for ${p.name}: limit ₹${p.creditLimit}, unbilled after this LR ₹${Math.round(used)}`
-    : null;
-};
-
 export const rateLookup = ah(async (req, res) => {
   const { fromBranch, toBranch, party } = req.query;
   ok(res, await findRate({ fromBranch, toBranch, partyId: party }));
@@ -62,7 +48,7 @@ export const createLR = ah(async (req, res) => {
   const totals = itemTotals(b.items);
   const freight = computeFreight(b.freight, totals);
   const billingParty = b.billingParty || (b.paymentType === 'tbb' ? consignor.party : b.paymentType === 'to_pay' ? consignee.party : consignor.party);
-  const warning = b.paymentType === 'tbb' ? await creditWarning(billingParty, freight.total) : null;
+  const warning = b.paymentType === 'tbb' && billingParty ? await creditCheck(billingParty, freight.total) : null;
   if (warning && b.overrideCredit !== true && !['owner', 'admin', 'branch_manager'].includes(req.user.role)) {
     throw new AppError(409, warning + '. Ask the branch manager to approve.', { code: 'CREDIT_LIMIT' });
   }
@@ -91,6 +77,7 @@ export const createLR = ah(async (req, res) => {
     createdBy: req.user._id,
     history: [{ status: 'booked', branch: bk._id, by: req.user._id, note: `Booked for ${dl.name}` }],
   });
+  if (lr.broker) await syncCommission(lr, req.user._id);
   await audit(req, { action: 'create', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: bk._id, changes: { total: freight.total, to: dl.code } });
 
   if (b.notifyConsignor !== false) {
@@ -147,6 +134,7 @@ export const findByNo = ah(async (req, res) => {
 export const updateLR = ah(async (req, res) => {
   const lr = await loadLR(req, req.params.id);
   if (lr.status !== 'booked') throw new AppError(400, `LR is ${lr.status} – it can only be edited before dispatch`);
+  if (lr.billed) throw new AppError(400, 'LR is already on a bill – cancel the bill first to edit it');
   assertBranch(req, lr.bookingBranch._id);
   const before = lr.toObject();
   const b = req.body || {};
@@ -161,6 +149,7 @@ export const updateLR = ah(async (req, res) => {
   lr.freight = computeFreight(b.freight || lr.freight.toObject?.() || lr.freight, totals);
   lr.history.push({ status: lr.status, branch: lr.bookingBranch._id, by: req.user._id, note: 'LR edited' });
   await lr.save();
+  await syncCommission(lr, req.user._id);
   await audit(req, { action: 'update', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: lr.bookingBranch._id, before, after: lr.toObject() });
   ok(res, (await loadLR(req, lr._id)).toObject(), 'LR updated');
 });
@@ -171,11 +160,12 @@ export const cancelLR = ah(async (req, res) => {
   const lr = await loadLR(req, req.params.id);
   assertBranch(req, lr.bookingBranch._id);
   const upd = await LR.findOneAndUpdate(
-    { _id: lr._id, status: 'booked' },
+    { _id: lr._id, status: 'booked', billed: { $ne: true } },
     { status: 'cancelled', cancelReason: reason, $push: { history: { status: 'cancelled', branch: lr.bookingBranch._id, by: req.user._id, note: reason } } },
     { new: true }
   );
-  if (!upd) throw new AppError(400, 'Only LRs not yet dispatched can be cancelled');
+  if (!upd) throw new AppError(400, 'Only LRs not yet dispatched (and not billed) can be cancelled');
+  await syncCommission(upd, req.user._id);
   await audit(req, { action: 'cancel', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: lr.bookingBranch._id, changes: { reason } });
   ok(res, null, `LR ${lr.lrNo} cancelled`);
 });

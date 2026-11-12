@@ -101,7 +101,9 @@ const lrSchema = new mongoose.Schema(
       remark: String,
       by: { type: ObjectId, ref: 'User' },
     },
-    billed: { type: Boolean, default: false }, // phase 2 billing
+    billed: { type: Boolean, default: false },
+    bill: { type: ObjectId, ref: 'Bill' },
+    brokerCommission: { type: Number, default: 0 },
     migratedFrom: String, // "vouch" for imported records
     history: [historySchema],
     createdBy: { type: ObjectId, ref: 'User' },
@@ -115,5 +117,6 @@ lrSchema.index({ deliveryBranch: 1, status: 1 });
 lrSchema.index({ currentBranch: 1, status: 1 });
 lrSchema.index({ 'consignor.mobile': 1 });
 lrSchema.index({ 'consignee.mobile': 1 });
+lrSchema.index({ billingParty: 1, billed: 1 });
 
 export const LR = mongoose.model('LR', lrSchema);

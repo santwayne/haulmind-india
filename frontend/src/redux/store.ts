@@ -63,3 +63,4 @@ export const can = (u: User | null, ...roles: User['role'][]) => !!u && roles.in
 export const OPS: User['role'][] = ['owner', 'admin', 'branch_manager', 'booking_clerk'];
 export const MANAGERS: User['role'][] = ['owner', 'admin', 'branch_manager'];
 export const HQ: User['role'][] = ['owner', 'admin'];
+export const ACCOUNTS: User['role'][] = ['owner', 'admin', 'branch_manager', 'accountant'];

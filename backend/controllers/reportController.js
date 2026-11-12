@@ -3,6 +3,7 @@ import { LR } from '../models/lrModel.js';
 import { Challan } from '../models/challanModel.js';
 import { Branch } from '../models/masterModels.js';
 import { AuditLog, Notification, BranchAlert, Claim } from '../models/systemModels.js';
+import { Bill, Receipt } from '../models/accountsModels.js';
 import { ah, ok, dayRange, paginate } from '../utils/http.js';
 import { assertBranch } from '../middleware/authRoles.js';
 
@@ -53,7 +54,23 @@ export const dashboard = ah(async (req, res) => {
     ]),
   ]);
 
+  // money (phase 2): billing + receipts in range, outstanding now – by branch that raised the bill / receipt
+  const [billed, received, owed] = await Promise.all([
+    Bill.aggregate([
+      { $match: { billDate: { $gte: start, $lte: end }, status: { $ne: 'cancelled' }, ...inB('branch') } },
+      { $group: { _id: '$branch', bills: { $sum: 1 }, amount: { $sum: '$total' } } },
+    ]),
+    Receipt.aggregate([
+      { $match: { date: { $gte: start, $lte: end }, status: 'active', ...inB('branch') } },
+      { $group: { _id: '$branch', count: { $sum: 1 }, amount: { $sum: '$amount' } } },
+    ]),
+    Bill.aggregate([
+      { $match: { status: { $in: ['unpaid', 'partial'] }, ...inB('branch') } },
+      { $group: { _id: '$branch', amount: { $sum: '$balance' }, overdue: { $sum: { $cond: [{ $lt: ['$dueDate', new Date()] }, '$balance', 0] } } } },
+    ]),
+  ]);
   const by = (arr) => Object.fromEntries(arr.map((r) => [String(r._id), r]));
+  const BL = by(billed), RC = by(received), OW = by(owed);
   const B = by(booked), D = by(dispatched), U = by(unloaded), L = by(delivered);
   const P = {};
   for (const p of pending) {
@@ -70,6 +87,13 @@ export const dashboard = ah(async (req, res) => {
       dispatched: { ...zero, ...D[k] },
       unloaded: { ...zero, ...U[k] },
       delivered: { ...zero, ...L[k] },
+      money: {
+        billed: BL[k]?.amount || 0,
+        bills: BL[k]?.bills || 0,
+        received: RC[k]?.amount || 0,
+        outstanding: OW[k]?.amount || 0,
+        overdue: OW[k]?.overdue || 0,
+      },
       pending: {
         toDispatch: (P[k]?.booked?.lrs || 0) + (P[k]?.at_branch?.lrs || 0),
         incoming: P[k]?.in_transit?.lrs || 0,
@@ -92,6 +116,10 @@ export const dashboard = ah(async (req, res) => {
     toDispatch: sum((r) => r.pending.toDispatch),
     inTransit: sum((r) => r.pending.incoming),
     toDeliver: sum((r) => r.pending.toDeliver),
+    billed: sum((r) => r.money.billed),
+    received: sum((r) => r.money.received),
+    outstanding: sum((r) => r.money.outstanding),
+    overdue: sum((r) => r.money.overdue),
   };
 
   // 7-day booking trend

@@ -33,8 +33,10 @@ const DEFS: Record<string, Def> = {
       { name: 'address', label: 'Address', span: 24, input: () => <Input.TextArea autoSize /> },
       { name: 'homeBranch', label: 'Home branch', span: 8, input: branchSel },
       { name: 'broker', label: 'Broker', span: 8, input: (c) => <Select allowClear options={c.brokers.map((b) => ({ value: b._id, label: b.name }))} /> },
-      { name: 'creditLimit', label: 'Credit limit (TBB)', span: 4, input: money },
+      { name: 'creditLimit', label: 'Credit limit', span: 4, input: money },
       { name: 'creditDays', label: 'Credit days', span: 4, input: n },
+      { name: 'openingBalance', label: 'Opening balance (+ party owes us)', span: 12, input: () => <InputNumber prefix="₹" className="!w-full" /> },
+      { name: 'whatsappOptIn', label: 'WhatsApp / SMS alerts', span: 12, input: () => <Select options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]} /> },
     ],
     toForm: (r) => ({ ...r, homeBranch: r.homeBranch?._id, broker: r.broker?._id }),
     columns: () => [
@@ -44,6 +46,8 @@ const DEFS: Record<string, Def> = {
       { title: 'GSTIN', dataIndex: 'gstin' },
       { title: 'Branch', render: (_: unknown, r: any) => r.homeBranch?.code },
       { title: 'Credit', render: (_: unknown, r: any) => (r.creditLimit ? `${inr(r.creditLimit)} / ${r.creditDays}d` : '—') },
+      { title: 'Opening', dataIndex: 'openingBalance', render: (v: number) => (v ? inr(v) : '') },
+      { title: '', render: (_: unknown, r: any) => <a href={`/ledger?kind=party&id=${r._id}`} onClick={(e) => e.stopPropagation()}>Ledger</a> },
     ],
   },
   brokers: {
@@ -190,7 +194,7 @@ export default function Masters() {
         />
       </div>
       <Modal open={!!editing} title={`${editing?._id ? 'Edit' : 'Add'} ${def.title.replace(/s$/, '').toLowerCase()}`} onCancel={() => setEditing(null)} onOk={save} okText="Save" width={720} destroyOnHidden>
-        <Form form={form} layout="vertical" initialValues={kind === 'branches' ? { type: 'branch' } : kind === 'brokers' ? { commissionType: 'percent' } : kind === 'vehicles' ? { type: 'hired' } : { creditDays: 30 }}>
+        <Form form={form} layout="vertical" initialValues={kind === 'branches' ? { type: 'branch' } : kind === 'brokers' ? { commissionType: 'percent' } : kind === 'vehicles' ? { type: 'hired' } : { creditDays: 30, whatsappOptIn: true }}>
           <Row gutter={10}>
             {def.fields.map((f) => (
               <Col key={String(f.name)} xs={24} sm={f.span || 12}>

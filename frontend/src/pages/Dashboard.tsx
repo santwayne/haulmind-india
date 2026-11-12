@@ -4,7 +4,7 @@ import { DatePicker, Table, Tag, Alert, Skeleton } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useGet } from '../api/hooks';
-import { useAppSelector } from '../redux/store';
+import { useAppSelector, can, ACCOUNTS } from '../redux/store';
 import { inr, num } from '../utils/format';
 
 type Row = {
@@ -14,6 +14,7 @@ type Row = {
   unloaded: { lrs: number; nag: number; short: number; damaged: number };
   delivered: { lrs: number; collected: number };
   pending: { toDispatch: number; incoming: number; toDeliver: number };
+  money: { billed: number; bills: number; received: number; outstanding: number; overdue: number };
 };
 type Dash = {
   totals: Record<string, number>;
@@ -34,6 +35,8 @@ const Kpi = ({ label, value, sub, to }: { label: string; value: string; sub?: st
 
 export default function Dashboard() {
   const branch = useAppSelector((s) => s.auth.branch);
+  const user = useAppSelector((s) => s.auth.user);
+  const money = can(user, ...ACCOUNTS, 'viewer');
   const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs(), dayjs()]);
   const { data, loading, error } = useGet<Dash>('/dashboard', {
     branch,
@@ -72,6 +75,14 @@ export default function Dashboard() {
             <Kpi label="Delivered" value={num(t.deliveredLrs)} sub={`${inr(t.collected)} collected`} />
             <Kpi label="To deliver now" value={num(t.toDeliver)} sub={`${num(t.inTransit)} in transit · ${num(t.toDispatch)} to dispatch`} to="/reports" />
           </div>
+          {money && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Kpi label={`Billed ${when}`} value={inr(t.billed)} to="/billing" />
+              <Kpi label={`Payment received ${when}`} value={inr(t.received)} to="/receipts" />
+              <Kpi label="Outstanding now" value={inr(t.outstanding)} sub="unpaid bills" to="/outstanding" />
+              <Kpi label="Overdue" value={inr(t.overdue)} sub="past credit days" to="/outstanding" />
+            </div>
+          )}
 
           <div className="panel">
             <div className="mb-3 font-bold text-slate-800">Branch-wise</div>
@@ -80,7 +91,7 @@ export default function Dashboard() {
               rowKey={(r) => r.branch._id}
               dataSource={data?.rows || []}
               pagination={false}
-              scroll={{ x: 900 }}
+              scroll={{ x: money ? 1200 : 900 }}
               columns={[
                 {
                   title: 'Branch', fixed: 'left', width: 170,
@@ -100,6 +111,13 @@ export default function Dashboard() {
                 { title: 'Pending dispatch', align: 'right', render: (_, r) => <b className={r.pending.toDispatch ? 'text-amber-600' : ''}>{r.pending.toDispatch}</b> },
                 { title: 'Incoming', align: 'right', render: (_, r) => r.pending.incoming },
                 { title: 'To deliver', align: 'right', render: (_, r) => <b className={r.pending.toDeliver ? 'text-cyan-700' : ''}>{r.pending.toDeliver}</b> },
+                ...(money
+                  ? [
+                      { title: 'Billed', align: 'right' as const, render: (_: unknown, r: Row) => inr(r.money?.billed) },
+                      { title: 'Received', align: 'right' as const, render: (_: unknown, r: Row) => inr(r.money?.received) },
+                      { title: 'Outstanding', align: 'right' as const, render: (_: unknown, r: Row) => <b className={r.money?.overdue ? 'text-red-600' : ''}>{inr(r.money?.outstanding)}</b> },
+                    ]
+                  : []),
               ]}
             />
           </div>

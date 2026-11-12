@@ -168,12 +168,116 @@ try {
   assert.equal(r.status, 200);
   step('edit lock after dispatch, cancel before dispatch');
 
+  // ═══ Phase 2: billing, receipts, ledger, broker ═══
+  r = await api('POST', '/brokers', { name: 'Rakesh Broker', commissionType: 'percent', commissionValue: 5 });
+  const broker = r.data;
+  r = await api('POST', '/parties', { name: 'Sri Murugan Knits TBB', mobile: '9876500001', creditLimit: 4000, creditDays: 30, openingBalance: 1000 });
+  const tbbParty = r.data;
+  const tbb = (kg) => api('POST', '/lrs', {
+    bookingBranch: byCode.TPR._id, deliveryBranch: byCode.LDH._id,
+    consignor: { party: tbbParty._id, name: tbbParty.name, mobile: tbbParty.mobile },
+    consignee: { name: 'Gill Hosiery', mobile: '9812345678' },
+    items: [{ description: 'Yarn', nag: 5, actualWeight: kg }], paymentType: 'tbb', broker: broker._id,
+    freight: { basis: 'weight', rate: 6 },
+  });
+  const t1 = await tbb(300); // 1800
+  const t2 = await tbb(200); // 1200
+  assert.equal(t1.status, 201, t1.message);
+  const t3 = await tbb(300); // exposure 1000 + 3000 + 1800 > 4000 → warning
+  assert.ok(t3.data.warning?.includes('Credit limit'), 'credit warning expected');
+  step(`TBB LRs booked, credit warning: "${t3.data.warning.slice(0, 40)}…"`);
+
+  r = await api('GET', '/reports/brokers');
+  let br = r.data.items.find((x) => x._id === broker._id);
+  assert.equal(br.commission, (1800 + 1200 + 1800) * 0.05);
+  step(`broker commission ₹${br.commission}`);
+
+  r = await api('GET', '/billing/parties');
+  assert.ok(r.data.items.some((x) => x.party === tbbParty._id && x.lrs === 3));
+  r = await api('GET', `/billing/unbilled?party=${tbbParty._id}`);
+  assert.equal(r.data.amount, 4800);
+  r = await api('POST', '/bills', { party: tbbParty._id, branch: byCode.TPR._id, lrIds: [t1.data.lr._id, t2.data.lr._id], discount: 100 });
+  assert.equal(r.status, 201, r.message);
+  const bill = r.data;
+  assert.equal(bill.total, 2900);
+  r = await api('POST', '/bills', { party: tbbParty._id, branch: byCode.TPR._id, lrIds: [t1.data.lr._id] });
+  assert.equal(r.status, 409);
+  r = await api('PUT', `/lrs/${t1.data.lr._id}`, { remarks: 'x' });
+  assert.equal(r.status, 400);
+  step(`bill ${bill.billNo} ₹${bill.total}; double billing + edit of billed LR blocked`);
+
+  pdf = await api('GET', `/bills/${bill._id}/pdf`, null, { raw: true });
+  assert.equal(pdf.status, 200);
+
+  // part payment, then the rest with TDS
+  r = await api('POST', '/receipts', { party: tbbParty._id, branch: byCode.TPR._id, amount: 1000, mode: 'cash' });
+  assert.equal(r.status, 201, r.message);
+  const rc1 = r.data;
+  let b2 = (await api('GET', `/bills/${bill._id}`)).data;
+  assert.equal(b2.status, 'partial');
+  assert.equal(b2.balance, 1900);
+  r = await api('POST', '/receipts', { party: tbbParty._id, branch: byCode.TPR._id, amount: 2350, tds: 50, mode: 'bank', reference: 'UTR123' });
+  assert.equal(r.status, 201, r.message);
+  b2 = (await api('GET', `/bills/${bill._id}`)).data;
+  assert.equal(b2.status, 'paid');
+  assert.equal(r.data.onAccount, 500); // 2400 settles 1900, 500 kept on account
+  step(`part payment → partial, second payment (incl. TDS) → paid, ₹${r.data.onAccount} on account`);
+
+  r = await api('POST', `/bills/${bill._id}/cancel`, { reason: 'test' });
+  assert.equal(r.status, 400);
+  step('paid bill cannot be cancelled');
+
+  // ledger: opening 1000 + bill 2900 − 1000 − 2400 = 500
+  r = await api('GET', `/ledger/party/${tbbParty._id}`);
+  assert.equal(r.data.closing, 500);
+  assert.equal(r.data.unbilled, 1800);
+  pdf = await api('GET', `/ledger/party/${tbbParty._id}?pdf=1`, null, { raw: true });
+  assert.equal(pdf.status, 200);
+  step(`party ledger closing ₹${r.data.closing} Dr, unbilled ₹${r.data.unbilled}`);
+
+  // cancel first receipt → bill partly open again
+  r = await api('POST', `/receipts/${rc1._id}/cancel`, { reason: 'cheque bounced' });
+  assert.equal(r.status, 200, r.message);
+  b2 = (await api('GET', `/bills/${bill._id}`)).data;
+  assert.equal(b2.status, 'partial');
+  assert.equal(b2.balance, 1000);
+  r = await api('GET', `/ledger/party/${tbbParty._id}`);
+  assert.equal(r.data.closing, 1500);
+  step('receipt cancel reopens bill and restores balance');
+
+  r = await api('GET', '/reports/outstanding');
+  const row = r.data.rows.find((x) => x.party === tbbParty._id);
+  assert.equal(row.net, 1500); // opening 1000 + bill balance 1000 − on account 500
+  assert.equal(row.b0_30, 1000);
+  step(`outstanding ageing: net ₹${row.net}, 0-30 days ₹${row.b0_30}`);
+
+  r = await api('POST', `/brokers/${broker._id}/payments`, { branch: byCode.TPR._id, amount: 100, mode: 'cash' });
+  assert.equal(r.status, 201, r.message);
+  r = await api('GET', `/ledger/broker/${broker._id}`);
+  assert.equal(r.data.closing, 240 - 100);
+  step(`broker paid ₹100, pending ₹${r.data.closing}`);
+
+  r = await api('POST', `/parties/${tbbParty._id}/remind`);
+  assert.equal(r.status, 200, r.message);
+  r = await api('POST', '/reminders/run');
+  assert.equal(r.data.sent, 0); // just reminded → not again for 15 days
+  step('payment reminder sent, 15-day gap respected');
+
   // dashboard
   r = await api('GET', '/dashboard');
-  assert.equal(r.data.totals.bookings, 2); // C cancelled
+  assert.equal(r.data.totals.bookings, 5); // C cancelled, 3 TBB added
+  assert.equal(r.data.totals.billed, 2900);
+  assert.equal(r.data.totals.outstanding, 1000);
   assert.equal(r.data.totals.deliveredLrs, 1);
   assert.equal(r.data.totals.toDeliver, 1); // B at Jalandhar
   step(`dashboard: ${JSON.stringify(r.data.totals)}`);
+
+  // totals must work when a branch is picked (aggregate needs ObjectIds)
+  r = await api('GET', `/lrs?branch=${byCode.TPR._id}&from=2000-01-01`);
+  assert.ok(r.data.sums.nag > 0, 'LR register totals for a branch');
+  r = await api('GET', `/bills?branch=${byCode.TPR._id}`);
+  assert.equal(r.data.sums.total, 2900);
+  step('branch-filtered totals');
 
   // public tracking
   token = null;

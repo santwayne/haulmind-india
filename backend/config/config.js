@@ -22,4 +22,6 @@ export const config = {
   BACKUP_DIR: process.env.BACKUP_DIR || './backups',
   BACKUP_CRON: process.env.BACKUP_CRON || '0 5 * * *', // every day 5:00 AM IST
   BACKUP_KEEP_DAYS: Number(process.env.BACKUP_KEEP_DAYS || 30),
+  REMINDER_CRON: process.env.REMINDER_CRON || '30 10 * * *', // daily 10:30 AM IST check
+  REMINDER_EVERY_DAYS: Number(process.env.REMINDER_EVERY_DAYS || 15),
 };

@@ -34,8 +34,11 @@ const partySchema = new mongoose.Schema(
     gstin: { type: String, uppercase: true, trim: true },
     homeBranch: { type: ObjectId, ref: 'Branch' },
     broker: { type: ObjectId, ref: 'Broker' },
-    creditLimit: { type: Number, default: 0 }, // phase 2 credit control uses this
-    creditDays: { type: Number, default: 30 },
+    creditLimit: { type: Number, default: 0 }, // warning when outstanding + new LR crosses this
+    creditDays: { type: Number, default: 30 }, // bill due date = bill date + creditDays
+    openingBalance: { type: Number, default: 0 }, // + party owes us, − we owe party (taken over from Vouch)
+    openingDate: Date,
+    lastReminderAt: Date, // 15-day payment reminder
     whatsappOptIn: { type: Boolean, default: true },
     // Party-specific freight rates (overrides branch defaults)
     rates: [

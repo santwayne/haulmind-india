@@ -10,7 +10,7 @@ const money = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN', { minimumFrac
 const dt = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-');
 const dtt = (d) => (d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-');
 
-const header = (doc, title, no, date, branch) => {
+const header = (doc, title, no, date, branch, noLabel = 'No. ') => {
   const w = doc.page.width - 80;
   doc.rect(40, 40, w, 56).fill(ACCENT);
   doc.fill('#fff').font('Helvetica-Bold').fontSize(18).text(config.COMPANY_NAME.toUpperCase(), 52, 50);
@@ -19,7 +19,7 @@ const header = (doc, title, no, date, branch) => {
     52, 74, { width: w - 200 }
   );
   doc.font('Helvetica-Bold').fontSize(13).text(title, 40, 50, { width: w - 12, align: 'right' });
-  doc.font('Helvetica').fontSize(9).text(`No. ${no}`, 40, 68, { width: w - 12, align: 'right' });
+  doc.font('Helvetica').fontSize(9).text(`${noLabel}${no}`, 40, 68, { width: w - 12, align: 'right' });
   doc.text(`Date: ${dt(date)}`, 40, 80, { width: w - 12, align: 'right' });
   doc.fill(INK);
   return 108;
@@ -212,4 +212,129 @@ export const dcPdf = (lr) =>
       } catch { /* ignore bad signature */ }
     }
     footerSign(doc, doc.y, 'Receiver signature', `For ${config.COMPANY_NAME}`);
+  });
+
+// ═══════════════ Phase 2: bill, receipt, ledger ═══════════════════════════
+
+// Indian number to words for amounts on bill / receipt
+const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+const two = (n) => (n < 20 ? ONES[n] : `${TENS[Math.floor(n / 10)]}${n % 10 ? ' ' + ONES[n % 10] : ''}`);
+const three = (n) => `${Math.floor(n / 100) ? ONES[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : ''}${n % 100 ? two(n % 100) : ''}`;
+export const inWords = (amount) => {
+  let n = Math.floor(Math.abs(Number(amount) || 0));
+  const paise = Math.round((Math.abs(Number(amount) || 0) - n) * 100);
+  if (!n && !paise) return 'Rupees Zero Only';
+  const parts = [];
+  const crore = Math.floor(n / 10000000); n %= 10000000;
+  const lakh = Math.floor(n / 100000); n %= 100000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (crore) parts.push(`${three(crore)} Crore`);
+  if (lakh) parts.push(`${two(lakh)} Lakh`);
+  if (thousand) parts.push(`${two(thousand)} Thousand`);
+  if (n) parts.push(three(n));
+  return `Rupees ${parts.join(' ')}${paise ? ` and ${two(paise)} Paise` : ''} Only`;
+};
+
+const partyLines = (p, fallback) => [p?.name || fallback, p?.address, [p?.city, p?.state].filter(Boolean).join(', '), p?.mobile && `Mob: ${p.mobile}`, p?.gstin && `GSTIN: ${p.gstin}`];
+
+export const billPdf = (b) =>
+  toBuffer((doc) => {
+    let y = header(doc, b.status === 'cancelled' ? 'FREIGHT BILL (CANCELLED)' : 'FREIGHT BILL', b.billNo, b.billDate, b.branch);
+    const w = doc.page.width - 80;
+    box(doc, 40, y, w * 0.62 - 4, 80, 'Bill to', partyLines(b.party, b.partyName));
+    box(doc, 40 + w * 0.62 + 4, y, w * 0.38 - 4, 80, 'Terms', [`Due date: ${dt(b.dueDate)}`, `${b.lines.length} LR`, b.branch?.gstin && `Our GSTIN: ${b.branch.gstin}`]);
+    y += 90;
+    y = table(
+      doc, y,
+      [
+        { label: '#', w: 22 },
+        { label: 'LR No. / Date', w: 112 },
+        { label: 'Route', w: 62 },
+        { label: 'Consignor / Consignee', w: 150 },
+        { label: 'Nag', w: 36, align: 'right' },
+        { label: 'Kg', w: 48, align: 'right' },
+        { label: 'Amount', w: w - 430, align: 'right' },
+      ],
+      b.lines.map((l, i) => [i + 1, `${l.lrNo}\n${dt(l.lrDate)}`, (l.route || '').replace('→', '-'), `${l.consignor} / ${l.consignee}`, l.nag, l.weight, money(l.amount)])
+    );
+    const rows = [
+      ['Sub total', money(b.subTotal)],
+      b.discount ? ['Less: discount', `- ${money(b.discount)}`] : null,
+      b.otherCharges ? ['Add: other charges', money(b.otherCharges)] : null,
+    ].filter(Boolean);
+    y += 8;
+    if (y > doc.page.height - 200) { doc.addPage(); y = 50; }
+    doc.font('Helvetica').fontSize(9.5);
+    for (const [k, v] of rows) {
+      doc.text(k, 40 + w - 260, y, { width: 140 });
+      doc.text(v, 40 + w - 120, y, { width: 114, align: 'right' });
+      y += 15;
+    }
+    doc.rect(40 + w - 265, y, 265, 22).fill(ACCENT);
+    doc.fill('#fff').font('Helvetica-Bold').fontSize(11).text('BILL TOTAL', 40 + w - 258, y + 6);
+    doc.text(money(b.total), 40 + w - 120, y + 6, { width: 114, align: 'right' });
+    doc.fill(INK);
+    y += 30;
+    doc.font('Helvetica-Oblique').fontSize(8.5).text(inWords(b.total), 40, y, { width: w });
+    if (b.received) {
+      doc.font('Helvetica').fontSize(9).text(`Received: ${money(b.received)}   Balance: ${money(b.balance)}`, 40, doc.y + 4, { width: w, align: 'right' });
+    }
+    if (b.remarks) doc.font('Helvetica').fontSize(8.5).text(`Remarks: ${b.remarks}`, 40, doc.y + 6, { width: w });
+    footerSign(doc, doc.y, 'Receiver signature', `For ${config.COMPANY_NAME}`);
+  });
+
+export const receiptPdf = (r) =>
+  toBuffer((doc) => {
+    let y = header(doc, r.status === 'cancelled' ? 'PAYMENT RECEIPT (CANCELLED)' : 'PAYMENT RECEIPT', r.receiptNo, r.date, r.branch);
+    const w = doc.page.width - 80;
+    box(doc, 40, y, w / 2 - 4, 76, 'Received from', partyLines(r.party, r.partyName));
+    box(doc, 40 + w / 2 + 4, y, w / 2 - 4, 76, 'Payment', [
+      `${r.mode.toUpperCase()}${r.bankName ? ' · ' + r.bankName : ''}`,
+      r.reference && `Ref / UTR / Cheque: ${r.reference}`,
+      r.tds ? `TDS deducted: ${money(r.tds)}` : null,
+    ]);
+    y += 86;
+    doc.rect(40, y, w, 30).fill('#ecfdf5');
+    doc.fill(ACCENT).font('Helvetica-Bold').fontSize(15).text(money(r.amount), 52, y + 8);
+    doc.fill(INK).font('Helvetica-Oblique').fontSize(8.5).text(inWords(r.amount), 200, y + 11, { width: w - 170, align: 'right' });
+    y += 42;
+    if (r.allocations?.length) {
+      y = table(doc, y, [{ label: 'Adjusted against bill', w: w - 140 }, { label: 'Amount', w: 140, align: 'right' }], r.allocations.map((a) => [a.billNo, money(a.amount)]));
+    }
+    if (r.onAccount) doc.font('Helvetica').fontSize(9).text(`Kept on account (advance): ${money(r.onAccount)}`, 40, y + 8, { width: w, align: 'right' });
+    if (r.narration) doc.fontSize(8.5).text(`Narration: ${r.narration}`, 40, doc.y + 6, { width: w });
+    footerSign(doc, doc.y, 'Party signature', `For ${config.COMPANY_NAME}`);
+  });
+
+export const ledgerPdf = (L) =>
+  toBuffer((doc) => {
+    const period = `${L.from ? dt(L.from) : 'Beginning'} to ${dt(L.to)}`;
+    let y = header(doc, L.title, L.name, L.to, null, '');
+    const w = doc.page.width - 80;
+    doc.font('Helvetica').fontSize(9).fill(MUTED).text(`${L.sub || ''}${L.sub ? ' · ' : ''}Period: ${period}`, 40, y, { width: w });
+    doc.fill(INK);
+    y += 18;
+    const fmtBal = (v) => `${money(Math.abs(v))} ${L.kind === 'party' ? (v >= 0 ? 'Dr' : 'Cr') : v >= 0 ? 'Cr' : 'Dr'}`;
+    y = table(
+      doc, y,
+      [
+        { label: 'Date', w: 62 },
+        { label: 'Particulars', w: 150 },
+        { label: 'Ref', w: 86 },
+        { label: 'Debit', w: 64, align: 'right' },
+        { label: 'Credit', w: 64, align: 'right' },
+        { label: 'Balance', w: w - 426, align: 'right' },
+      ],
+      [
+        ['', 'Opening balance', '', '', '', fmtBal(L.opening)],
+        ...L.entries.map((e) => [dt(e.date), e.narration || e.type, e.ref || '', e.debit ? money(e.debit) : '', e.credit ? money(e.credit) : '', fmtBal(e.balance)]),
+        ['', 'Total', '', money(L.totalDebit), money(L.totalCredit), ''],
+      ]
+    );
+    doc.rect(40, y + 6, w, 22).fill(ACCENT);
+    doc.fill('#fff').font('Helvetica-Bold').fontSize(10.5).text('CLOSING BALANCE', 52, y + 12);
+    doc.text(fmtBal(L.closing), 40, y + 12, { width: w - 12, align: 'right' });
+    doc.fill(INK);
+    doc.font('Helvetica').fontSize(7).fill(MUTED).text(`Computer generated statement · ${config.COMPANY_NAME} · Powered by ${config.PRODUCT_NAME}`, 40, doc.page.height - 50, { width: w, align: 'center' });
   });

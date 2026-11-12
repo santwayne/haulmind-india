@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Spin } from 'antd';
-import { useAppSelector, HQ, type User } from './redux/store';
+import { useAppSelector, HQ, ACCOUNTS, type User } from './redux/store';
 import AppLayout from './layout/AppLayout';
 import Login from './pages/Login';
 import PublicTrack from './pages/PublicTrack';
@@ -17,6 +17,11 @@ const Delivery = lazy(() => import('./pages/Delivery'));
 const Reports = lazy(() => import('./pages/Reports'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
 const Masters = lazy(() => import('./pages/masters/Masters'));
+const Billing = lazy(() => import('./pages/Billing'));
+const Receipts = lazy(() => import('./pages/Receipts'));
+const Ledger = lazy(() => import('./pages/Ledger'));
+const Outstanding = lazy(() => import('./pages/Outstanding'));
+const BrokerCommission = lazy(() => import('./pages/BrokerCommission'));
 const Users = lazy(() => import('./pages/masters/Users'));
 
 const Protected = ({ children, roles }: { children: ReactNode; roles?: User['role'][] }) => {
@@ -58,6 +63,11 @@ export default function App() {
             <Route path="delivery" element={<Delivery />} />
             <Route path="reports" element={<Reports />} />
             <Route path="masters/:kind" element={<Masters />} />
+            <Route path="billing" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Billing /></Protected>} />
+            <Route path="receipts" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Receipts /></Protected>} />
+            <Route path="ledger" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Ledger /></Protected>} />
+            <Route path="outstanding" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Outstanding /></Protected>} />
+            <Route path="brokers" element={<Protected roles={[...ACCOUNTS, 'viewer']}><BrokerCommission /></Protected>} />
             <Route path="users" element={<Protected roles={HQ}><Users /></Protected>} />
             <Route path="audit" element={<Protected roles={HQ}><AuditLog /></Protected>} />
           </Route>

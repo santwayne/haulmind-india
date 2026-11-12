@@ -32,13 +32,27 @@ haulmind-india/
 | 13. Security – login per employee, 6 roles, branch-limited access, daily 5 AM backup, mobile + desktop | `authMiddleware`, `authRoles`, `jobs/backupJob.js` |
 | 14. Extras – freight calculation (party/route rates), damage claims, audit log, LR tracking (public page), credit-limit warning on TBB | `freightService`, `Claim`, `AuditLog`, `/track` |
 
-## Phase 2 / 3 – next
+## Phase 2 – billing & payments (done)
 
-- Billing: party bills from many LRs, bill PDF, outstanding + ageing (7)
-- Payments: cash/bank receipts against bills, part payment, broker commission, receipts (8)
-- 15-day payment reminders + 30-day credit tracking (9) – template `payment_reminder` already exists
-- Accounting: ledgers, cash/bank book, branch expenses, P&L per branch/month/year (10, 11)
-- Vouch data import: LR Excel, party/broker ledgers, cash/bank, POD/DC PDFs (12) – LR model already has `migratedFrom`, and the API accepts the old LR no. for migrated records
+| Requirement | Where |
+|---|---|
+| 7. Billing – party account, bill from many LRs (TBB + to-pay delivered on credit), bill PDF, due date from party credit days, outstanding, days pending, full ledger any time | `controllers/accountsController.js` (bills, ledger), `pages/Billing.tsx`, `Ledger.tsx` |
+| 8. Payments – cash / UPI / bank / cheque, bill-wise adjustment or auto oldest-first, part payment, TDS, money kept on account, receipt PDF, balance updates itself | receipts in `accountsController.js`, `pages/Receipts.tsx` |
+| 8 + 14. Broker commission – % of freight or fixed per LR, posted automatically on booking, reversed on cancel/edit, broker payments, broker ledger | `services/accountService.js` (`syncCommission`), `pages/BrokerCommission.tsx` |
+| 9. Payment reminder every 15 days, 30-day credit period, balance updates on payment | `jobs/reminderJob.js`, `Party.creditDays`, manual "Send reminder" button |
+| 11. Who owes how much – outstanding with ageing (0-30 / 31-60 / 61-90 / 90+), overdue, unbilled; dashboard shows billed, received, outstanding per branch | `services/accountService.js` (`outstandingReport`), `pages/Outstanding.tsx`, `Dashboard.tsx` |
+| 14. Credit control – warning when outstanding + unbilled + new LR crosses the party's credit limit | `creditCheck` in `accountService.js` |
+| Opening balances (from Vouch) per party | Party master → "Opening balance" (accounts staff only) |
+
+All money is written once as `LedgerEntry` rows (bill, receipt, cancel, commission, broker payment),
+so every screen reads the same numbers. Billed LRs cannot be edited or cancelled until their bill is cancelled,
+and a bill with payments cannot be cancelled until those receipts are cancelled.
+
+## Phase 3 – next
+
+- Full accounting: cash book, bank book, branch expenses (rent, salary, electricity), lorry hire payable
+- Profit & loss per branch, per month and year; combined report for all branches (10, 11)
+- Vouch data import: LR Excel, party/broker ledgers, cash/bank, POD/DC PDFs (12)
 
 ## Run locally
 
