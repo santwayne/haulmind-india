@@ -2,12 +2,13 @@ import mongoose from 'mongoose';
 import { LR } from '../models/lrModel.js';
 import { Branch, Party, Broker } from '../models/masterModels.js';
 import { Bill, Receipt, LedgerEntry } from '../models/accountsModels.js';
-import { ah, ok, AppError, paginate, escapeRegex } from '../utils/http.js';
+import { ah, ok, AppError, sendPdf, paginate, escapeRegex } from '../utils/http.js';
 import { assertBranch } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { billPdf, receiptPdf, ledgerPdf } from '../services/pdfService.js';
+import { postCash, reverseCash } from '../services/financeService.js';
 import {
   r2, billableFilter, billableAmount, partyBalance, unbilledAmount, refreshBill, outstandingReport,
 } from '../services/accountService.js';
@@ -16,11 +17,6 @@ const oid = (x) => new mongoose.Types.ObjectId(String(x));
 const visibleBranches = (req) => (req.allBranches ? null : req.branchIds);
 const lrInScope = (req) =>
   req.allBranches ? {} : { $or: [{ bookingBranch: { $in: req.branchIds.map(oid) } }, { deliveryBranch: { $in: req.branchIds.map(oid) } }] };
-const sendPdf = (res, buf, name) => {
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${name}.pdf"`);
-  res.send(buf);
-};
 // aggregate() does not cast like find(), so turn id strings into ObjectIds for $match
 const castIds = (f) => {
   const out = { ...f };
@@ -244,6 +240,8 @@ export const createReceipt = ah(async (req, res) => {
     await Bill.updateOne({ _id: a.bill }, { $inc: { received: a.amount } });
     await refreshBill(a.bill);
   }
+  const cash = await postCash({ accountId: b.account, branchId: branch._id, mode: receipt.mode, direction: 'in', amount, category: 'party_receipt', date, refType: 'Receipt', refId: receipt._id, ref: receiptNo, party: party._id, narration: `${party.name} – ${receiptNo}${b.reference ? ' ' + b.reference : ''}`, createdBy: req.user._id });
+  if (cash) { receipt.account = cash.account; await receipt.save(); }
   await LedgerEntry.create({
     account: 'party', party: party._id, date, type: 'receipt', ref: receiptNo, refId: receipt._id, branch: branch._id,
     credit: r2(amount + tds), mode: receipt.mode,
@@ -300,6 +298,7 @@ export const cancelReceipt = ah(async (req, res) => {
     await Bill.updateOne({ _id: a.bill }, { $inc: { received: -a.amount } });
     await refreshBill(a.bill);
   }
+  await reverseCash({ refType: 'Receipt', refId: r._id, userId: req.user._id, narration: `Receipt ${r.receiptNo} cancelled: ${reason}` });
   await LedgerEntry.create({
     account: 'party', party: r.party._id, type: 'receipt_cancel', ref: r.receiptNo, refId: r._id, branch: r.branch._id,
     debit: r2(r.amount + (r.tds || 0)), narration: `Receipt ${r.receiptNo} cancelled: ${reason}`, createdBy: req.user._id,
@@ -389,6 +388,7 @@ export const payBroker = ah(async (req, res) => {
     ref: b.reference, branch: b.branch, debit: amount, mode: b.mode || 'cash',
     narration: `Paid ${b.mode || 'cash'}${b.reference ? ' ' + b.reference : ''}${b.narration ? ' – ' + b.narration : ''}`, createdBy: req.user._id,
   });
+  await postCash({ accountId: b.account, branchId: b.branch, mode: e.mode, direction: 'out', amount, category: 'broker_payment', date: e.date, refType: 'BrokerPayment', refId: e._id, ref: broker.name, broker: broker._id, narration: `Broker ${broker.name}${b.reference ? ' – ' + b.reference : ''}`, createdBy: req.user._id });
   await audit(req, { action: 'create', entity: 'BrokerPayment', entityId: e._id, ref: broker.name, branch: b.branch, changes: { amount, mode: e.mode } });
   ok(res, e, `₹${amount} paid to ${broker.name}`, 201);
 });

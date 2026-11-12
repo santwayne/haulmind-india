@@ -27,7 +27,7 @@ export const dashboard = ah(async (req, res) => {
   const { start, end } = dayRange(req.query.from, req.query.to);
   const ids = visibleBranchIds(req);
   const inB = (f) => (ids ? { [f]: { $in: ids } } : {});
-  const branches = await Branch.find(ids ? { _id: { $in: ids } } : { active: { $ne: false } }).select('name code type').sort({ type: 1, name: 1 }).lean();
+  const branches = await Branch.find(ids ? { _id: { $in: ids } } : { active: { $ne: false } }).select('name code type').sort({ type: -1, name: 1 }).lean();
 
   const [booked, dispatched, unloaded, delivered, pending] = await Promise.all([
     LR.aggregate([

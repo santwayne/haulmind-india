@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import { connectDB } from '../config/mongoConnection.js';
 import { Branch, RouteRate } from '../models/masterModels.js';
 import { User } from '../models/userModel.js';
+import { ensureDefaultHeads } from '../services/financeService.js';
 
 export const BRANCHES = [
   { code: 'LDH', name: 'Ludhiana Hub', type: 'hub', city: 'Ludhiana', state: 'Punjab' },
@@ -25,7 +26,7 @@ export const seed = async ({ ownerPassword, quiet } = {}) => {
     const doc = await Branch.findOneAndUpdate(
       { code: b.code },
       { $setOnInsert: { name: b.name, type: b.type || 'branch', city: b.city, state: b.state } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
     byCode[b.code] = doc;
   }
@@ -41,6 +42,7 @@ export const seed = async ({ ownerPassword, quiet } = {}) => {
       { upsert: true }
     );
   }
+  await ensureDefaultHeads();
   let password = null;
   if (!(await User.exists({ role: 'owner' }))) {
     password = ownerPassword || process.env.SEED_OWNER_PASSWORD || crypto.randomBytes(6).toString('base64url');

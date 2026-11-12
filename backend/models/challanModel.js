@@ -37,6 +37,8 @@ const challanSchema = new mongoose.Schema(
     transporter: String,
     lorryHire: { type: Number, default: 0 },
     advancePaid: { type: Number, default: 0 },
+    hirePaid: { type: Number, default: 0 }, // advance + later payments
+    hireSettled: { type: Boolean, default: false },
     dispatchedAt: { type: Date, default: Date.now },
     expectedAt: Date,
     lines: [lineSchema],

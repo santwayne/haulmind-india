@@ -35,13 +35,13 @@ const crud = (Model, { name, searchFields = ['name'], populate = '', soft = true
   update: ah(async (req, res) => {
     const before = await Model.findById(req.params.id).lean();
     if (!before) throw new AppError(404, `${name} not found`);
-    const doc = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const doc = await Model.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
     await audit(req, { action: 'update', entity: name, entityId: doc._id, ref: doc.name || doc.number || doc.code, before, after: doc.toObject() });
     ok(res, doc, `${name} updated`);
   }),
   remove: ah(async (req, res) => {
     const doc = soft
-      ? await Model.findByIdAndUpdate(req.params.id, { active: false }, { new: true })
+      ? await Model.findByIdAndUpdate(req.params.id, { active: false }, { returnDocument: 'after' })
       : await Model.findByIdAndDelete(req.params.id);
     if (!doc) throw new AppError(404, `${name} not found`);
     await audit(req, { action: 'delete', entity: name, entityId: doc._id, ref: doc.name || doc.number || doc.code });
@@ -49,7 +49,7 @@ const crud = (Model, { name, searchFields = ['name'], populate = '', soft = true
   }),
 });
 
-export const branchCtl = crud(Branch, { name: 'Branch', searchFields: ['name', 'code', 'city', 'state'], populate: 'parentHub', sort: { type: 1, name: 1 } });
+export const branchCtl = crud(Branch, { name: 'Branch', searchFields: ['name', 'code', 'city', 'state'], populate: 'parentHub', sort: { type: -1, name: 1 } });
 export const partyCtl = crud(Party, { name: 'Party', searchFields: ['name', 'mobile', 'gstin', 'city'], populate: 'homeBranch broker' });
 export const brokerCtl = crud(Broker, { name: 'Broker', searchFields: ['name', 'mobile'] });
 export const vehicleCtl = crud(Vehicle, { name: 'Vehicle', searchFields: ['number', 'ownerName', 'driverName'], sort: { number: 1 } });

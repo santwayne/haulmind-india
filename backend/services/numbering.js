@@ -16,7 +16,7 @@ export const fyTag = (d = new Date()) => {
 export const nextNumber = async (kind, branchCode, date = new Date()) => {
   const fy = fyTag(date);
   const key = `${kind}:${branchCode}:${fy}`;
-  const c = await Counter.findOneAndUpdate({ _id: key }, { $inc: { seq: 1 } }, { upsert: true, new: true });
+  const c = await Counter.findOneAndUpdate({ _id: key }, { $inc: { seq: 1 } }, { upsert: true, returnDocument: 'after' });
   if (kind === 'LR') return `${branchCode}-${fy}-${String(c.seq).padStart(5, '0')}`;
   return `${branchCode}-${kind}-${fy}-${String(c.seq).padStart(4, '0')}`;
 };

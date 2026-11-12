@@ -20,3 +20,11 @@ export const podUpload = multer({
   fileFilter: (req, file, cb) =>
     allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Only JPG, PNG, WEBP or PDF allowed')),
 });
+
+// Imports (Vouch Excel / CSV / zip of POD files) – kept in memory, never written as-is
+export const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 150 * 1024 * 1024 },
+  fileFilter: (req, file, cb) =>
+    /\.(xlsx|csv|zip)$/i.test(file.originalname) ? cb(null, true) : cb(new Error('Upload .xlsx, .csv or .zip')),
+});

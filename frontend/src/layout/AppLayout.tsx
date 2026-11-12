@@ -4,7 +4,7 @@ import { Badge, Button, Drawer, Dropdown, Grid, Input, Layout, Menu, Popover, Se
 import {
   LayoutDashboard, FilePlus2, FileText, Truck, PackageOpen, PackageCheck, BarChart3, Building2,
   Users as UsersIcon, Contact, Car, IndianRupee, History, Bell, LogOut, Menu as MenuIcon, Search, KeyRound, Handshake,
-  Receipt, BookOpen, Wallet, ReceiptText, Clock,
+  Receipt, BookOpen, Wallet, ReceiptText, Clock, Landmark, NotebookPen, Truck as TruckIcon, TrendingUp, HandCoins, FileUp,
 } from 'lucide-react';
 import { api, errMsg } from '../api/client';
 import { useBranches } from '../api/hooks';
@@ -56,6 +56,11 @@ export default function AppLayout() {
         { key: '/outstanding', icon: <Clock size={15} />, label: 'Outstanding' },
         { key: '/ledger', icon: <BookOpen size={15} />, label: 'Ledger' },
         { key: '/brokers', icon: <Handshake size={15} />, label: 'Broker commission' },
+        { key: '/cashbook', icon: <Landmark size={15} />, label: 'Cash & bank book' },
+        { key: '/vouchers', icon: <NotebookPen size={15} />, label: 'Expenses & income' },
+        { key: '/lorry-hire', icon: <TruckIcon size={15} />, label: 'Lorry hire' },
+        { key: '/payables', icon: <HandCoins size={15} />, label: 'To pay' },
+        { key: '/profit-loss', icon: <TrendingUp size={15} />, label: 'Profit & loss' },
       ],
     },
     {
@@ -69,6 +74,7 @@ export default function AppLayout() {
       ],
     },
     can(user, ...HQ) && { key: '/users', icon: <UsersIcon size={17} />, label: 'Staff & logins' },
+    can(user, ...HQ) && { key: '/import', icon: <FileUp size={17} />, label: 'Import from Vouch' },
     can(user, ...HQ) && { key: '/audit', icon: <History size={17} />, label: 'Audit & messages' },
   ].filter(Boolean) as never[];
 
@@ -84,7 +90,7 @@ export default function AppLayout() {
       mode="inline"
       style={{ borderInlineEnd: 0 }}
       selectedKeys={[selected || '/']}
-      defaultOpenKeys={loc.pathname.startsWith('/masters') ? ['masters'] : ['/billing', '/receipts', '/outstanding', '/ledger', '/brokers'].some((k) => loc.pathname.startsWith(k)) ? ['accounts'] : []}
+      defaultOpenKeys={loc.pathname.startsWith('/masters') ? ['masters'] : ['/billing', '/receipts', '/outstanding', '/ledger', '/brokers', '/cashbook', '/vouchers', '/lorry-hire', '/payables', '/profit-loss'].some((k) => loc.pathname.startsWith(k)) ? ['accounts'] : []}
       items={items}
       onClick={(e) => {
         nav(e.key);

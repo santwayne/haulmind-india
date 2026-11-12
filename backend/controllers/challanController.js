@@ -2,12 +2,13 @@ import { Challan } from '../models/challanModel.js';
 import { LR } from '../models/lrModel.js';
 import { Branch, Vehicle } from '../models/masterModels.js';
 import { BranchAlert, Claim } from '../models/systemModels.js';
-import { ah, ok, AppError, paginate, escapeRegex } from '../utils/http.js';
+import { ah, ok, AppError, paginate, escapeRegex, sendPdf } from '../utils/http.js';
 import { assertBranch, branchFilter } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { challanPdf } from '../services/pdfService.js';
+import { postCash, reverseCash } from '../services/financeService.js';
 
 const POP = [
   { path: 'fromBranch', select: 'name code address phone' },
@@ -49,7 +50,7 @@ export const createChallan = ah(async (req, res) => {
     vehicle = await Vehicle.findOneAndUpdate(
       { number: String(b.vehicleNo).toUpperCase().replace(/\s+/g, '') },
       { $setOnInsert: { driverName: b.driverName, driverMobile: b.driverMobile, type: 'hired' } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   }
 
@@ -73,6 +74,7 @@ export const createChallan = ah(async (req, res) => {
     transporter: b.transporter,
     lorryHire: b.lorryHire || 0,
     advancePaid: b.advancePaid || 0,
+    hirePaid: b.advancePaid || 0,
     dispatchedAt: b.dispatchedAt || new Date(),
     expectedAt: b.expectedAt,
     lines: lrs.map((l) => ({ lr: l._id, lrNo: l.lrNo, nag: l.totalNag, weight: l.totalWeight })),
@@ -104,6 +106,9 @@ export const createChallan = ah(async (req, res) => {
     throw new AppError(409, 'One of the LRs was just loaded on another challan. Refresh and try again.');
   }
 
+  if (challan.advancePaid > 0) {
+    await postCash({ accountId: b.hireAccount, branchId: from._id, mode: b.hireMode || 'cash', direction: 'out', amount: challan.advancePaid, category: 'lorry_hire', refType: 'Challan', refId: challan._id, ref: challanNo, narration: `Lorry hire advance – ${challan.vehicleNo || ''} ${challanNo}`, createdBy: req.user._id });
+  }
   await BranchAlert.create({
     branch: to._id,
     title: `${challan.vehicleNo || 'Vehicle'} dispatched from ${from.name}`,
@@ -224,6 +229,8 @@ export const cancelChallan = ah(async (req, res) => {
       { status: back, $unset: { currentChallan: 1 }, $push: { history: { status: back, branch: ch.fromBranch._id, by: req.user._id, ref: ch.challanNo, note: 'Challan cancelled, goods back at branch' } } }
     );
   }
+  await reverseCash({ refType: 'Challan', refId: ch._id, userId: req.user._id, narration: `Challan ${ch.challanNo} cancelled` });
+  ch.hirePaid = 0;
   ch.status = 'cancelled';
   ch.remarks = [ch.remarks, `Cancelled: ${req.body?.reason || ''}`].filter(Boolean).join(' | ');
   await ch.save();
@@ -233,8 +240,5 @@ export const cancelChallan = ah(async (req, res) => {
 
 export const challanPdfCtl = ah(async (req, res) => {
   const ch = await loadChallan(req, req.params.id);
-  const pdf = await challanPdf(ch.toObject());
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${ch.challanNo}.pdf"`);
-  res.send(pdf);
+  sendPdf(res, await challanPdf(ch.toObject()), ch.challanNo);
 });

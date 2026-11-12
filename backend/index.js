@@ -4,9 +4,11 @@ import { config } from './config/config.js';
 import { connectDB } from './config/mongoConnection.js';
 import { scheduleBackup } from './jobs/backupJob.js';
 import { scheduleReminders } from './jobs/reminderJob.js';
+import { ensureDefaultHeads } from './services/financeService.js';
 
 const start = async () => {
   await connectDB();
+  await ensureDefaultHeads();
   scheduleBackup();
   scheduleReminders();
   http.createServer(app).listen(config.PORT, '0.0.0.0', () => {

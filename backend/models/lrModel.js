@@ -64,6 +64,7 @@ const lrSchema = new mongoose.Schema(
     invoiceValue: Number,
     ewayBillNo: String,
     paymentType: { type: String, enum: ['paid', 'to_pay', 'tbb'], default: 'to_pay' },
+    paidMode: { type: String, enum: ['cash', 'upi', 'bank', 'cheque'], default: 'cash' }, // for PAID LRs
     freight: {
       basis: { type: String, enum: ['weight', 'nag', 'fixed'], default: 'weight' },
       rate: { type: Number, default: 0 },

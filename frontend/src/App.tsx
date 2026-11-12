@@ -22,6 +22,12 @@ const Receipts = lazy(() => import('./pages/Receipts'));
 const Ledger = lazy(() => import('./pages/Ledger'));
 const Outstanding = lazy(() => import('./pages/Outstanding'));
 const BrokerCommission = lazy(() => import('./pages/BrokerCommission'));
+const CashBook = lazy(() => import('./pages/CashBook'));
+const Vouchers = lazy(() => import('./pages/Vouchers'));
+const LorryHire = lazy(() => import('./pages/LorryHire'));
+const ProfitLoss = lazy(() => import('./pages/ProfitLoss'));
+const Payables = lazy(() => import('./pages/Payables'));
+const ImportData = lazy(() => import('./pages/ImportData'));
 const Users = lazy(() => import('./pages/masters/Users'));
 
 const Protected = ({ children, roles }: { children: ReactNode; roles?: User['role'][] }) => {
@@ -68,6 +74,12 @@ export default function App() {
             <Route path="ledger" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Ledger /></Protected>} />
             <Route path="outstanding" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Outstanding /></Protected>} />
             <Route path="brokers" element={<Protected roles={[...ACCOUNTS, 'viewer']}><BrokerCommission /></Protected>} />
+            <Route path="cashbook" element={<Protected roles={[...ACCOUNTS, 'viewer']}><CashBook /></Protected>} />
+            <Route path="vouchers" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Vouchers /></Protected>} />
+            <Route path="lorry-hire" element={<Protected roles={[...ACCOUNTS, 'viewer']}><LorryHire /></Protected>} />
+            <Route path="profit-loss" element={<Protected roles={[...ACCOUNTS, 'viewer']}><ProfitLoss /></Protected>} />
+            <Route path="payables" element={<Protected roles={[...ACCOUNTS, 'viewer']}><Payables /></Protected>} />
+            <Route path="import" element={<Protected roles={HQ}><ImportData /></Protected>} />
             <Route path="users" element={<Protected roles={HQ}><Users /></Protected>} />
             <Route path="audit" element={<Protected roles={HQ}><AuditLog /></Protected>} />
           </Route>

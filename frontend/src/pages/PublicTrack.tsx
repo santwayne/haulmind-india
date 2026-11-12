@@ -60,8 +60,8 @@ export default function PublicTrack() {
               {data.status === 'cancelled' ? (
                 <Alert type="error" message="This LR was cancelled" />
               ) : (
-                <Steps size="small" current={stepIdx} responsive={false} className="!mb-5"
-                  items={[{ title: 'Booked' }, { title: 'On the way' }, { title: 'Arrived' }, { title: 'Delivered' }]} />
+                <Steps size="small" current={stepIdx} responsive={false} labelPlacement="vertical" className="!mb-5"
+                  items={[{ title: 'Booked' }, { title: 'On way' }, { title: 'Arrived' }, { title: 'Delivered' }]} />
               )}
               {data.status === 'delivered' && <Alert type="success" className="!mb-4" message={`Delivered to ${data.receiverName} on ${dt(data.deliveredAt)}`} />}
               <Timeline

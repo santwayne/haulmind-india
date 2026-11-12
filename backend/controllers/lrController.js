@@ -1,6 +1,6 @@
 import { LR } from '../models/lrModel.js';
 import { Branch, Party } from '../models/masterModels.js';
-import { ah, ok, AppError, paginate, escapeRegex } from '../utils/http.js';
+import { ah, ok, AppError, paginate, escapeRegex, sendPdf } from '../utils/http.js';
 import { assertBranch, branchFilter } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { computeFreight, itemTotals, findRate } from '../services/freightService.js';
@@ -9,6 +9,7 @@ import { notify } from '../services/notificationService.js';
 import { lrPdf } from '../services/pdfService.js';
 import { config } from '../config/config.js';
 import { creditCheck, syncCommission } from '../services/accountService.js';
+import { postCash, reverseCash } from '../services/financeService.js';
 
 const POP = [
   { path: 'bookingBranch', select: 'name code address phone' },
@@ -71,6 +72,7 @@ export const createLR = ah(async (req, res) => {
     invoiceValue: b.invoiceValue,
     ewayBillNo: b.ewayBillNo,
     paymentType: b.paymentType || 'to_pay',
+    paidMode: b.paidMode || 'cash',
     freight,
     deliveryType: b.deliveryType || 'godown',
     remarks: b.remarks,
@@ -78,6 +80,9 @@ export const createLR = ah(async (req, res) => {
     history: [{ status: 'booked', branch: bk._id, by: req.user._id, note: `Booked for ${dl.name}` }],
   });
   if (lr.broker) await syncCommission(lr, req.user._id);
+  if (lr.paymentType === 'paid') {
+    await postCash({ branchId: bk._id, mode: lr.paidMode, direction: 'in', amount: freight.total, category: 'lr_paid', refType: 'LR', refId: lr._id, ref: lrNo, party: consignor.party, narration: `Freight PAID – LR ${lrNo}`, createdBy: req.user._id });
+  }
   await audit(req, { action: 'create', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: bk._id, changes: { total: freight.total, to: dl.code } });
 
   if (b.notifyConsignor !== false) {
@@ -138,7 +143,7 @@ export const updateLR = ah(async (req, res) => {
   assertBranch(req, lr.bookingBranch._id);
   const before = lr.toObject();
   const b = req.body || {};
-  for (const k of ['invoiceNo', 'invoiceValue', 'ewayBillNo', 'paymentType', 'deliveryType', 'remarks', 'broker', 'billingParty']) if (k in b) lr[k] = b[k];
+  for (const k of ['invoiceNo', 'invoiceValue', 'ewayBillNo', 'paymentType', 'paidMode', 'deliveryType', 'remarks', 'broker', 'billingParty']) if (k in b) lr[k] = b[k];
   if (b.deliveryBranch) lr.deliveryBranch = b.deliveryBranch;
   if (b.consignor) lr.consignor = await upsertParty(b.consignor, lr.bookingBranch._id);
   if (b.consignee) lr.consignee = await upsertParty(b.consignee, lr.deliveryBranch);
@@ -150,6 +155,11 @@ export const updateLR = ah(async (req, res) => {
   lr.history.push({ status: lr.status, branch: lr.bookingBranch._id, by: req.user._id, note: 'LR edited' });
   await lr.save();
   await syncCommission(lr, req.user._id);
+  // re-post cash for PAID LRs (amount or payment type may have changed)
+  await reverseCash({ refType: 'LR', refId: lr._id, userId: req.user._id, narration: `LR ${lr.lrNo} edited` });
+  if (lr.paymentType === 'paid') {
+    await postCash({ branchId: lr.bookingBranch._id, mode: lr.paidMode, direction: 'in', amount: lr.freight.total, category: 'lr_paid', refType: 'LR', refId: lr._id, ref: lr.lrNo, party: lr.consignor.party, narration: `Freight PAID – LR ${lr.lrNo}`, createdBy: req.user._id });
+  }
   await audit(req, { action: 'update', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: lr.bookingBranch._id, before, after: lr.toObject() });
   ok(res, (await loadLR(req, lr._id)).toObject(), 'LR updated');
 });
@@ -162,10 +172,11 @@ export const cancelLR = ah(async (req, res) => {
   const upd = await LR.findOneAndUpdate(
     { _id: lr._id, status: 'booked', billed: { $ne: true } },
     { status: 'cancelled', cancelReason: reason, $push: { history: { status: 'cancelled', branch: lr.bookingBranch._id, by: req.user._id, note: reason } } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!upd) throw new AppError(400, 'Only LRs not yet dispatched (and not billed) can be cancelled');
   await syncCommission(upd, req.user._id);
+  await reverseCash({ refType: 'LR', refId: lr._id, userId: req.user._id, narration: `LR ${lr.lrNo} cancelled` });
   await audit(req, { action: 'cancel', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: lr.bookingBranch._id, changes: { reason } });
   ok(res, null, `LR ${lr.lrNo} cancelled`);
 });
@@ -173,10 +184,7 @@ export const cancelLR = ah(async (req, res) => {
 export const lrPdfCtl = ah(async (req, res) => {
   const lr = await loadLR(req, req.params.id);
   const copies = req.query.copy ? [String(req.query.copy).toUpperCase() + ' COPY'] : undefined;
-  const pdf = await lrPdf(lr.toObject(), copies);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="LR-${lr.lrNo}.pdf"`);
-  res.send(pdf);
+  sendPdf(res, await lrPdf(lr.toObject(), copies), `LR-${lr.lrNo}`, !!req.query.download);
 });
 
 // Public tracking – no amounts or phone numbers

@@ -70,6 +70,7 @@ const receiptSchema = new mongoose.Schema(
     partyName: String,
     amount: { type: Number, required: true, min: 0.01 },
     mode: { type: String, enum: ['cash', 'bank', 'upi', 'cheque'], default: 'cash' },
+    account: { type: ObjectId, ref: 'MoneyAccount' }, // cash box / bank the money went into
     bankName: String,
     reference: String, // UTR / cheque no.
     allocations: [allocationSchema],

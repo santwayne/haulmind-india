@@ -19,6 +19,7 @@ body { margin: 0; background: #f3f7f5; font-family: var(--font-sans); color: #0f
 .panel { background: #fff; border: 1px solid #e2ece6; border-radius: 12px; padding: 16px; }
 
 .ant-table-cell { font-variant-numeric: tabular-nums; }
+.ant-table-thead > tr > th { white-space: nowrap; }
 .sig-pad { border: 1px dashed #94a3b8; border-radius: 8px; background: #fff; touch-action: none; width: 100%; height: 140px; }
 
 @media (max-width: 640px) {

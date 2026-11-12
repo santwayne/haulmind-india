@@ -28,3 +28,12 @@ export const dayRange = (from, to) => {
 };
 
 export const escapeRegex = (s = '') => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Send a PDF safely – file names may contain Hindi / Tamil / "–", which are not allowed raw in HTTP headers */
+export const sendPdf = (res, buf, name, download = false) => {
+  const base = String(name || 'document').replace(/\.pdf$/i, '');
+  const ascii = base.normalize('NFKD').replace(/[^\x20-\x7E]/g, '').replace(/["\\]/g, '').replace(/\s+/g, ' ').trim() || 'document';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${ascii}.pdf"; filename*=UTF-8''${encodeURIComponent(base)}.pdf`);
+  res.send(buf);
+};

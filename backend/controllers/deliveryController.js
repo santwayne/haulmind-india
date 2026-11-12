@@ -1,11 +1,12 @@
 import { LR } from '../models/lrModel.js';
-import { ah, ok, AppError } from '../utils/http.js';
+import { ah, ok, AppError, sendPdf } from '../utils/http.js';
 import { assertBranch } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { dcPdf } from '../services/pdfService.js';
 import { Branch } from '../models/masterModels.js';
+import { postCash } from '../services/financeService.js';
 
 /**
  * Delivery (point 6). multipart/form-data:
@@ -22,7 +23,7 @@ export const deliverLR = ah(async (req, res) => {
 
   const b = req.body || {};
   if (!b.receiverName) throw new AppError(400, 'Receiver name is required');
-  if (lr.paymentType === 'to_pay' && !Number(b.collectedAmount) && b.allowCredit !== 'true') {
+  if (lr.paymentType === 'to_pay' && lr.freight.total > 0 && !Number(b.collectedAmount) && b.allowCredit !== 'true') {
     throw new AppError(400, `This is a TO PAY LR – collect ₹${lr.freight.total} or mark allowCredit`);
   }
   const branch = await Branch.findById(lr.deliveryBranch);
@@ -49,9 +50,12 @@ export const deliverLR = ah(async (req, res) => {
       delivery,
       $push: { history: { status: 'delivered', branch: lr.deliveryBranch, by: req.user._id, ref: dcNo, note: `Delivered to ${b.receiverName}` } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!upd) throw new AppError(409, 'LR was delivered by someone else just now');
+  if (delivery.collectedAmount > 0) {
+    await postCash({ branchId: lr.deliveryBranch, mode: delivery.collectionMode === 'none' ? 'cash' : delivery.collectionMode, direction: 'in', amount: delivery.collectedAmount, category: 'topay_collection', refType: 'LR', refId: lr._id, ref: lr.lrNo, party: lr.consignee.party, narration: `TO PAY collected – LR ${lr.lrNo}, ${dcNo}`, createdBy: req.user._id });
+  }
   await audit(req, { action: 'status', entity: 'LR', entityId: lr._id, ref: lr.lrNo, branch: lr.deliveryBranch, changes: { status: { from: 'arrived', to: 'delivered' }, dcNo, collected: delivery.collectedAmount } });
   notify({
     event: 'lr_delivered', mobile: lr.consignor.mobile, lr: lr._id, party: lr.consignor.party,
@@ -78,8 +82,5 @@ export const dcPdfCtl = ah(async (req, res) => {
   const lr = await LR.findById(req.params.id).populate('bookingBranch deliveryBranch', 'name code address phone');
   if (!lr || lr.status !== 'delivered') throw new AppError(404, 'No delivery challan for this LR');
   assertBranch(req, lr.deliveryBranch._id);
-  const pdf = await dcPdf(lr.toObject());
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${lr.delivery.dcNo}.pdf"`);
-  res.send(pdf);
+  sendPdf(res, await dcPdf(lr.toObject()), lr.delivery.dcNo);
 });

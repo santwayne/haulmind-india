@@ -45,6 +45,7 @@ export default function LRForm() {
   const bookingBranch = Form.useWatch('bookingBranch', form);
   const deliveryBranch = Form.useWatch('deliveryBranch', form);
   const consignorParty = Form.useWatch(['consignor', 'party'], form);
+  const paymentType = Form.useWatch('paymentType', form);
   const totals = useMemo(() => calc(freight, items), [freight, items]);
 
   useEffect(() => {
@@ -134,6 +135,7 @@ export default function LRForm() {
         onFinish={submit}
         initialValues={{
           paymentType: 'to_pay',
+          paidMode: 'cash',
           deliveryType: 'godown',
           items: [{ nag: 1 }],
           freight: { basis: 'weight', rate: 0, biltyCharge: 0, hamali: 0, doorDelivery: 0, otherCharges: 0, gstPercent: 0 },
@@ -157,6 +159,13 @@ export default function LRForm() {
                 <Radio.Group optionType="button" buttonStyle="solid" options={[{ value: 'paid', label: 'Paid' }, { value: 'to_pay', label: 'To Pay' }, { value: 'tbb', label: 'TBB' }]} />
               </Form.Item>
             </Col>
+            {paymentType === 'paid' && (
+              <Col xs={12} md={4}>
+                <Form.Item name="paidMode" label="Paid by" className="!mb-2">
+                  <Select options={[{ value: 'cash', label: 'Cash' }, { value: 'upi', label: 'UPI' }, { value: 'bank', label: 'Bank' }, { value: 'cheque', label: 'Cheque' }]} />
+                </Form.Item>
+              </Col>
+            )}
             <Col xs={24} md={5}>
               <Form.Item name="deliveryType" label="Delivery" className="!mb-2">
                 <Radio.Group optionType="button" options={[{ value: 'godown', label: 'Godown' }, { value: 'door', label: 'Door' }]} />

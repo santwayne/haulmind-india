@@ -24,6 +24,8 @@ function NewReceipt({ onSaved }: { onSaved: () => void }) {
   const [mode, setMode] = useState('cash');
   const [reference, setReference] = useState('');
   const [bankName, setBankName] = useState('');
+  const [intoAccount, setIntoAccount] = useState<string | undefined>();
+  const bankAccounts = (useGet<{ items: any[] }>('/money-accounts').data?.items || []).filter((a) => a.type === 'bank' && (!a.branch || a.branch._id === branch));
   const [date, setDate] = useState<Dayjs>(dayjs());
   const [narration, setNarration] = useState('');
   const [alloc, setAlloc] = useState<Record<string, number>>({});
@@ -55,6 +57,7 @@ function NewReceipt({ onSaved }: { onSaved: () => void }) {
       const allocations = Object.entries(alloc).filter(([, v]) => v > 0).map(([bill, v]) => ({ bill, amount: v }));
       const r = await api.post('/receipts', {
         party, branch, amount, tds, mode, reference, bankName, date: date.format('YYYY-MM-DD'), narration,
+        ...(mode !== 'cash' && intoAccount ? { account: intoAccount } : {}),
         allocations, autoAllocate: false,
       });
       const rc = r.data.data;
@@ -111,8 +114,12 @@ function NewReceipt({ onSaved }: { onSaved: () => void }) {
               <Input value={reference} onChange={(e) => setReference(e.target.value)} />
             </Col>
             <Col xs={12} md={4}>
-              <div className="text-xs text-slate-500">Bank</div>
+              <div className="text-xs text-slate-500">Party's bank</div>
               <Input value={bankName} onChange={(e) => setBankName(e.target.value)} />
+            </Col>
+            <Col xs={24} md={6}>
+              <div className="text-xs text-slate-500">Received in our account</div>
+              <Select allowClear placeholder="Default bank" value={intoAccount} onChange={setIntoAccount} className="w-full" options={bankAccounts.map((a) => ({ value: a._id, label: a.name }))} />
             </Col>
           </>
         )}

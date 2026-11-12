@@ -263,9 +263,137 @@ try {
   assert.equal(r.data.sent, 0); // just reminded → not again for 15 days
   step('payment reminder sent, 15-day gap respected');
 
+  // ═══ Phase 3: cash / bank, vouchers, lorry hire, P&L, payables, import ═══
+  r = await api('GET', '/money-accounts');
+  const accounts = r.data.items;
+  const cashOf = (code) => accounts.find((a) => a.type === 'cash' && a.branch?.code === code);
+  assert.ok(cashOf('TPR') && cashOf('LDH'), 'every branch has a cash box');
+  // TPR cash so far: − lorry hire advance 20000 (ch1) − broker paid 100 in cash
+  assert.equal(cashOf('TPR').balance, -20100);
+  // LDH cash: + TO PAY collected at delivery (3070)
+  assert.equal(cashOf('LDH').balance, 3070);
+  // bank receipt (2350, UTR123) went to the auto-created main bank account
+  const bank = accounts.find((a) => a.type === 'bank');
+  assert.equal(bank.balance, 2350);
+  step('cash boxes auto-created; delivery collection, hire advance and bank receipt posted');
+
+  r = await api('PUT', `/money-accounts/${cashOf('LDH')._id}`, { ...cashOf('LDH'), branch: byCode.LDH._id, openingBalance: 10000 });
+  assert.equal(r.status, 200, r.message);
+
+  // PAID LR → cash in at booking branch; cancel → reversed
+  const paid = await api('POST', '/lrs', {
+    bookingBranch: byCode.TPR._id, deliveryBranch: byCode.LDH._id,
+    consignor: { name: 'Walk-in Customer', mobile: '9876500002' }, consignee: { name: 'Gill Hosiery', mobile: '9812345678' },
+    items: [{ description: 'Cartons', nag: 2, actualWeight: 100 }], paymentType: 'paid', paidMode: 'cash',
+    freight: { basis: 'weight', rate: 6 },
+  });
+  assert.equal(paid.status, 201, paid.message);
+  r = await api('GET', `/cashbook?account=${cashOf('TPR')._id}&from=2000-01-01`);
+  assert.equal(r.data.closing, -20100 + 600);
+  await api('POST', `/lrs/${paid.data.lr._id}/cancel`, { reason: 'test' });
+  r = await api('GET', `/cashbook?account=${cashOf('TPR')._id}&from=2000-01-01`);
+  assert.equal(r.data.closing, -20100);
+  step('PAID LR posts ₹600 to TPR cash, cancel reverses it');
+
+  // vouchers at LDH
+  r = await api('GET', '/heads?kind=expense');
+  assert.ok(r.data.items.some((h) => h.name === 'Rent'));
+  r = await api('POST', '/vouchers', { type: 'expense', branch: byCode.LDH._id, head: 'Rent', amount: 5000, mode: 'cash', paidTo: 'Landlord' });
+  assert.equal(r.status, 201, r.message);
+  r = await api('POST', '/vouchers', { type: 'income', branch: byCode.LDH._id, head: 'Godown rent received', amount: 1000, mode: 'cash' });
+  assert.equal(r.status, 201, r.message);
+  r = await api('POST', '/vouchers', { type: 'contra', branch: byCode.LDH._id, amount: 2000, account: cashOf('LDH')._id, toAccount: bank._id, narration: 'Cash deposited' });
+  assert.equal(r.status, 201, r.message);
+  const wrong = await api('POST', '/vouchers', { type: 'expense', branch: byCode.LDH._id, head: 'Electricity', amount: 999, mode: 'cash' });
+  r = await api('POST', `/vouchers/${wrong.data.refId}/cancel`, { reason: 'entered twice' });
+  assert.equal(r.status, 200, r.message);
+  r = await api('POST', `/vouchers/${wrong.data.refId}/cancel`, { reason: 'again' });
+  assert.equal(r.status, 400);
+  r = await api('GET', `/cashbook?account=${cashOf('LDH')._id}&from=2000-01-01`);
+  // 10000 opening + 3070 − 5000 + 1000 − 2000 (+999 −999) = 7070
+  assert.equal(r.data.closing, 7070);
+  pdf = await api('GET', `/cashbook?account=${cashOf('LDH')._id}&from=2000-01-01&pdf=1`, null, { raw: true });
+  assert.equal(pdf.status, 200);
+  r = await api('GET', '/vouchers?from=2000-01-01');
+  assert.equal(r.data.sums.expense, 5000);
+  step(`LDH cash book closing ₹7070 after rent, income, deposit to bank and a cancelled voucher`);
+
+  // lorry hire balance paid at Ludhiana from bank
+  r = await api('GET', '/lorry-hire');
+  assert.equal(r.data.totalPending, 25000);
+  r = await api('POST', `/challans/${ch1._id}/hire-payment`, { amount: 30000, mode: 'bank' });
+  assert.equal(r.status, 400);
+  r = await api('POST', `/challans/${ch1._id}/hire-payment`, { amount: 25000, mode: 'bank' });
+  assert.equal(r.status, 200, r.message);
+  r = await api('GET', '/lorry-hire');
+  assert.equal(r.data.totalPending, 0);
+  step('lorry hire balance ₹25000 paid, overpayment blocked');
+
+  // P&L
+  r = await api('GET', '/reports/pnl?from=2000-01-01');
+  const T = r.data.total;
+  assert.equal(T.lorryHire, 45000);
+  assert.equal(T.brokerCommission, 240);
+  assert.equal(T.discount, 100);
+  assert.equal(T.otherIncome, 1000);
+  assert.equal(T.expenses, 5000);
+  assert.equal(T.heads.Rent, 5000);
+  assert.equal(T.profit, Math.round((T.income - T.totalExpense) * 100) / 100);
+  const ldhRow = r.data.rows.find((x) => x.branch.code === 'LDH');
+  assert.equal(ldhRow.expenses, 5000);
+  pdf = await api('GET', '/reports/pnl?from=2000-01-01&pdf=1', null, { raw: true });
+  assert.equal(pdf.status, 200);
+  step(`P&L: income ₹${T.income}, expenses ₹${T.totalExpense}, ${T.profit >= 0 ? 'profit' : 'loss'} ₹${Math.abs(T.profit)}`);
+
+  r = await api('GET', '/reports/payables');
+  assert.equal(r.data.totals.brokers, 140);
+  assert.equal(r.data.totals.lorryHire, 0);
+  step(`payables: brokers ₹${r.data.totals.brokers}, lorry hire ₹${r.data.totals.lorryHire}, party advances ₹${r.data.totals.partyAdvances}`);
+
+  // ── Vouch import ──
+  const ExcelJS = (await import('exceljs')).default;
+  const sheet = async (rows) => { const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('x'); rows.forEach((x) => ws.addRow(x)); return Buffer.from(await wb.xlsx.writeBuffer()); };
+  const upload = async (path, buf, name) => { const fd = new FormData(); fd.append('file', new Blob([buf]), name); return api('POST', path, null, { form: fd }); };
+  let tpl = await api('GET', '/import/template/lrs', null, { raw: true });
+  assert.equal(tpl.status, 200);
+  const partyXlsx = await sheet([
+    ['Party Name', 'Mobile', 'City', 'Opening Balance', 'Branch'],
+    ['Old Party One', '9811111111', 'Ludhiana', '12,500 Dr', 'LDH'],
+    ['Old Party Two', '12345', 'Kochi', 800, 'COK'],
+  ]);
+  r = await upload('/import/parties?commit=0', partyXlsx, 'parties.xlsx');
+  assert.equal(r.data.ready, 1);
+  assert.equal(r.data.withErrors, 1);
+  r = await upload('/import/parties?commit=1', partyXlsx, 'parties.xlsx');
+  assert.equal(r.status, 400);
+  r = await upload('/import/parties?commit=1&skipErrors=1', partyXlsx, 'parties.xlsx');
+  assert.equal(r.data.saved, 1);
+  r = await api('GET', '/parties?q=Old Party One');
+  assert.equal(r.data.items[0].openingBalance, 12500);
+  const lrCsv = Buffer.from('Bilty No,Date,From,To,Consignor,Consignee,Nag,Weight,Freight,Payment Type,Status\nVCH-1001,05-04-2025,TPR,LDH,Old Party One,Gill Hosiery,10,500,3050,tbb,delivered\nVCH-1002,06/04/2025,TPR,XXX,A,B,1,1,10,paid,delivered\n');
+  r = await upload('/import/lrs?commit=1&skipErrors=1', lrCsv, 'lrs.csv');
+  assert.equal(r.status, 200, r.message);
+  assert.equal(r.data.saved, 1);
+  assert.equal(r.data.withErrors, 1);
+  r = await api('GET', '/lrs/by-no/VCH-1001');
+  assert.equal(r.data.migratedFrom, 'vouch');
+  assert.equal(r.data.billed, true);
+  r = await upload('/import/lrs?commit=1', lrCsv.toString().split('\n').slice(0, 2).join('\n') + '\n' === '' ? lrCsv : Buffer.from('LR No,LR Date,From Branch Code,To Branch Code,Consignor,Consignee,Freight Total\nVCH-1001,05-04-2025,TPR,LDH,X,Y,1\n'), 'again.csv');
+  assert.equal(r.data.saved, 0); // already imported → skipped
+  const AdmZip = (await import('adm-zip')).default;
+  const z = new AdmZip();
+  z.addFile('VCH-1001_POD.pdf', Buffer.from('%PDF-1.4 pod'));
+  z.addFile('UNKNOWN-9.pdf', Buffer.from('%PDF-1.4 x'));
+  r = await upload('/import/pod', z.toBuffer(), 'pods.zip');
+  assert.equal(r.data.matched.length, 1);
+  assert.equal(r.data.unmatched.length, 1);
+  r = await upload('/import/money?commit=1', await sheet([['Account Name', 'Type', 'Branch Code', 'Opening Balance'], ['HDFC Current', 'bank', '', 150000]]), 'money.xlsx');
+  assert.equal(r.data.saved, 1);
+  step('Vouch import: parties (with error preview), LRs from CSV, duplicate skip, POD zip matched, bank opening');
+
   // dashboard
   r = await api('GET', '/dashboard');
-  assert.equal(r.data.totals.bookings, 5); // C cancelled, 3 TBB added
+  assert.equal(r.data.totals.bookings, 5); // C + paid LR cancelled, 3 TBB added
   assert.equal(r.data.totals.billed, 2900);
   assert.equal(r.data.totals.outstanding, 1000);
   assert.equal(r.data.totals.deliveredLrs, 1);

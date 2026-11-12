@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 import { authorizeRoles, OPS_ROLES, MANAGER_ROLES, HQ_ROLES, ACCOUNTS_ROLES } from '../middleware/authRoles.js';
-import { podUpload } from '../middleware/upload.js';
+import { podUpload, importUpload } from '../middleware/upload.js';
 import { login, me, changePassword } from '../controllers/authController.js';
 import { branchCtl, partyCtl, brokerCtl, vehicleCtl, rateCtl, userCtl } from '../controllers/masterController.js';
 import * as lr from '../controllers/lrController.js';
@@ -9,6 +9,8 @@ import * as ch from '../controllers/challanController.js';
 import * as dl from '../controllers/deliveryController.js';
 import * as rp from '../controllers/reportController.js';
 import * as ac from '../controllers/accountsController.js';
+import * as fin from '../controllers/financeController.js';
+import * as imp from '../controllers/importController.js';
 import { runBackup } from '../jobs/backupJob.js';
 import { runReminders } from '../jobs/reminderJob.js';
 import { ah, ok } from '../utils/http.js';
@@ -109,3 +111,23 @@ router.get('/reports/brokers', authorizeRoles(...ACC, 'viewer'), ac.brokerSummar
 router.post('/brokers/:id/payments', authorizeRoles(...ACC), ac.payBroker);
 router.post('/parties/:id/remind', authorizeRoles(...ACC), ac.sendReminder);
 router.post('/reminders/run', authorizeRoles(...HQ_ROLES), ah(async (req, res) => ok(res, await runReminders(), 'Reminders processed')));
+
+// ── Phase 3: cash / bank, vouchers, lorry hire, P&L, payables, Vouch import ──
+router.get('/money-accounts', authorizeRoles(...ACC, 'viewer'), fin.listMoneyAccounts);
+router.post('/money-accounts', authorizeRoles(...HQ_ROLES), fin.saveMoneyAccount);
+router.put('/money-accounts/:id', authorizeRoles(...HQ_ROLES), fin.saveMoneyAccount);
+router.get('/heads', fin.listHeads);
+router.post('/heads', authorizeRoles(...ACC), fin.createHead);
+router.get('/vouchers', authorizeRoles(...ACC, 'viewer'), fin.listVouchers);
+router.post('/vouchers', authorizeRoles(...ACC), fin.createVoucher);
+router.post('/vouchers/:id/cancel', authorizeRoles(...MANAGER_ROLES, 'accountant'), fin.cancelVoucher);
+router.get('/cashbook', authorizeRoles(...ACC, 'viewer'), fin.cashBook);
+router.get('/lorry-hire', authorizeRoles(...ACC, 'viewer'), fin.lorryHire);
+router.post('/challans/:id/hire-payment', authorizeRoles(...ACC), fin.payLorryHire);
+router.get('/reports/pnl', authorizeRoles(...ACC, 'viewer'), fin.pnl);
+router.get('/reports/payables', authorizeRoles(...ACC, 'viewer'), fin.payables);
+
+router.get('/import/kinds', authorizeRoles(...HQ_ROLES), imp.importKinds);
+router.get('/import/template/:kind', authorizeRoles(...HQ_ROLES), imp.template);
+router.post('/import/pod', authorizeRoles(...HQ_ROLES), importUpload.single('file'), imp.importPods);
+router.post('/import/:kind', authorizeRoles(...HQ_ROLES), importUpload.single('file'), imp.runImport);

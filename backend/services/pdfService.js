@@ -338,3 +338,94 @@ export const ledgerPdf = (L) =>
     doc.fill(INK);
     doc.font('Helvetica').fontSize(7).fill(MUTED).text(`Computer generated statement · ${config.COMPANY_NAME} · Powered by ${config.PRODUCT_NAME}`, 40, doc.page.height - 50, { width: w, align: 'center' });
   });
+
+// ═══════════════ Phase 3: cash / bank book, P&L ═══════════════════════════
+
+export const cashBookPdf = (C) =>
+  toBuffer((doc) => {
+    const title = C.account.type === 'cash' ? 'CASH BOOK' : 'BANK BOOK';
+    let y = header(doc, title, C.account.name, C.to, C.account.branch || null, '');
+    const w = doc.page.width - 80;
+    doc.font('Helvetica').fontSize(9).fill(MUTED).text(`Period: ${dt(C.from)} to ${dt(C.to)}${C.account.accountLabel ? ' · ' + C.account.accountLabel : ''}`, 40, y, { width: w });
+    doc.fill(INK);
+    y += 18;
+    y = table(
+      doc, y,
+      [
+        { label: 'Date', w: 62 },
+        { label: 'Particulars', w: 176 },
+        { label: 'Ref', w: 86 },
+        { label: 'In', w: 60, align: 'right' },
+        { label: 'Out', w: 60, align: 'right' },
+        { label: 'Balance', w: w - 444, align: 'right' },
+      ],
+      [
+        ['', 'Opening balance', '', '', '', money(C.opening)],
+        ...C.entries.map((e) => [dt(e.date), e.narration || e.category, e.voucherNo || e.ref || '', e.direction === 'in' ? money(e.amount) : '', e.direction === 'out' ? money(e.amount) : '', money(e.balance)]),
+        ['', 'Total', '', money(C.totalIn), money(C.totalOut), ''],
+      ]
+    );
+    doc.rect(40, y + 6, w, 22).fill(ACCENT);
+    doc.fill('#fff').font('Helvetica-Bold').fontSize(10.5).text('CLOSING BALANCE', 52, y + 12);
+    doc.text(money(C.closing), 40, y + 12, { width: w - 12, align: 'right' });
+    doc.fill(INK);
+    footerSign(doc, doc.y, 'Cashier', `For ${config.COMPANY_NAME}`);
+  });
+
+export const pnlPdf = (P) =>
+  toBuffer((doc) => {
+    let y = header(doc, 'PROFIT & LOSS', `${dt(P.from)} – ${dt(P.to)}`, P.to, null, '');
+    const w = doc.page.width - 80;
+    const T = P.total;
+    const lines = [
+      ['INCOME', null, true],
+      ['Freight (excl. GST)', T.freight],
+      ['Other income', T.otherIncome],
+      ['Total income', T.income, true],
+      ['EXPENSES', null, true],
+      ['Lorry hire', T.lorryHire],
+      ['Broker commission', T.brokerCommission],
+      ['Discount allowed on bills', T.discount],
+      ['Damage / shortage claims paid', T.claims],
+      ...Object.entries(T.heads).sort((a, b) => b[1] - a[1]).map(([h, v]) => [h, v]),
+      ['Total expenses', T.totalExpense, true],
+    ];
+    doc.font('Helvetica-Bold').fontSize(10).text('Combined – all branches', 40, y);
+    y += 16;
+    for (const [k, v, bold] of lines) {
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9.5);
+      doc.text(k, 52, y, { width: 300 });
+      if (v != null) doc.text(money(v), 40, y, { width: w - 12, align: 'right' });
+      y += 15;
+    }
+    doc.rect(40, y + 2, w, 24).fill(T.profit >= 0 ? ACCENT : '#b91c1c');
+    doc.fill('#fff').font('Helvetica-Bold').fontSize(11).text(T.profit >= 0 ? 'NET PROFIT' : 'NET LOSS', 52, y + 9);
+    doc.text(`${money(Math.abs(T.profit))}  (${T.margin}% of income)`, 40, y + 9, { width: w - 12, align: 'right' });
+    doc.fill(INK);
+    y += 40;
+    y = table(
+      doc, y,
+      [
+        { label: 'Branch', w: 120 },
+        { label: 'Income', w: 80, align: 'right' },
+        { label: 'Lorry hire', w: 75, align: 'right' },
+        { label: 'Commission', w: 70, align: 'right' },
+        { label: 'Expenses', w: 75, align: 'right' },
+        { label: 'Profit', w: w - 420, align: 'right' },
+      ],
+      P.rows.map((r) => [`${r.branch.name} (${r.branch.code})`, money(r.income), money(r.lorryHire), money(r.brokerCommission), money(r.expenses + r.discount + r.claims), money(r.profit)])
+    );
+    if (P.months.length > 1) {
+      y = table(
+        doc, y + 14,
+        [
+          { label: 'Month', w: 120 },
+          { label: 'Income', w: 100, align: 'right' },
+          { label: 'Expenses', w: 100, align: 'right' },
+          { label: 'Profit', w: w - 320, align: 'right' },
+        ],
+        P.months.map((m) => [m.month, money(m.income), money(m.totalExpense), money(m.profit)])
+      );
+    }
+    doc.font('Helvetica').fontSize(7).fill(MUTED).text(`Computer generated · ${config.COMPANY_NAME} · Powered by ${config.PRODUCT_NAME}`, 40, doc.page.height - 50, { width: w, align: 'center' });
+  });
