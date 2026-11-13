@@ -91,7 +91,7 @@ export default function Dashboard() {
               rowKey={(r) => r.branch._id}
               dataSource={data?.rows || []}
               pagination={false}
-              scroll={{ x: money ? 1200 : 900 }}
+              scroll={{ x: money ? 1560 : 1100 }}
               columns={[
                 {
                   title: 'Branch', fixed: 'left', width: 170,
@@ -108,7 +108,7 @@ export default function Dashboard() {
                 { title: 'Unloaded', align: 'right', render: (_, r) => <>{num(r.unloaded.lrs)}{(r.unloaded.short || r.unloaded.damaged) ? <Tag color="red" className="!ml-1">{r.unloaded.short + r.unloaded.damaged}</Tag> : null}</> },
                 { title: 'Delivered', align: 'right', render: (_, r) => num(r.delivered.lrs) },
                 { title: 'Collected', align: 'right', render: (_, r) => inr(r.delivered.collected) },
-                { title: 'Pending dispatch', align: 'right', render: (_, r) => <b className={r.pending.toDispatch ? 'text-amber-600' : ''}>{r.pending.toDispatch}</b> },
+                { title: 'To dispatch', align: 'right', render: (_, r) => <b className={r.pending.toDispatch ? 'text-amber-600' : ''}>{r.pending.toDispatch}</b> },
                 { title: 'Incoming', align: 'right', render: (_, r) => r.pending.incoming },
                 { title: 'To deliver', align: 'right', render: (_, r) => <b className={r.pending.toDeliver ? 'text-cyan-700' : ''}>{r.pending.toDeliver}</b> },
                 ...(money
