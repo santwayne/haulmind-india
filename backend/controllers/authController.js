@@ -3,6 +3,7 @@ import { config } from '../config/config.js';
 import { User } from '../models/userModel.js';
 import { ah, ok, AppError } from '../utils/http.js';
 import { audit } from '../services/auditService.js';
+import { lockedFor, recordFailure, recordSuccess } from '../utils/loginLimiter.js';
 
 const publicUser = (u) => ({
   _id: u._id,
@@ -17,10 +18,17 @@ const publicUser = (u) => ({
 export const login = ah(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) throw new AppError(400, 'Username and password are required');
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const wait = lockedFor(ip, username);
+  if (wait) throw new AppError(429, `Too many wrong passwords. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`);
   const user = await User.findOne({ username: String(username).toLowerCase().trim() })
     .select('+password')
     .populate('branches', 'name code type');
-  if (!user || !(await user.checkPassword(password))) throw new AppError(401, 'Wrong username or password');
+  if (!user || !(await user.checkPassword(password))) {
+    recordFailure(ip, username);
+    throw new AppError(401, 'Wrong username or password');
+  }
+  recordSuccess(ip, username);
   if (user.status !== 'active') throw new AppError(403, 'Your account is not active. Contact the owner.');
   user.lastLoginAt = new Date();
   await user.save();

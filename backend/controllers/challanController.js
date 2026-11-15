@@ -159,27 +159,49 @@ export const unloadChallan = ah(async (req, res) => {
   const input = req.body?.lines || [];
   if (!input.length) throw new AppError(400, 'Nothing to unload');
 
-  const done = [];
+  // 1) check every row first, so a bad row saves nothing
+  const plan = [];
   for (const row of input) {
     const line = ch.lines.find((l) => String(l.lr._id || l.lr) === String(row.lr));
     if (!line) throw new AppError(400, `LR ${row.lr} is not on this challan`);
     if (line.unloaded) continue; // duplicate entry protection
-    const received = row.receivedNag == null ? line.nag : Number(row.receivedNag);
-    if (received < 0 || received > line.nag) throw new AppError(400, `${line.lrNo}: received nag must be between 0 and ${line.nag}`);
-    const damaged = Math.min(Number(row.damagedNag) || 0, received);
-    line.unloaded = true;
-    line.receivedNag = received;
-    line.shortNag = line.nag - received;
-    line.damagedNag = damaged;
-    line.damageRemark = row.damageRemark;
-    line.unloadedAt = new Date();
+    const received = row.receivedNag == null || row.receivedNag === '' ? line.nag : Number(row.receivedNag);
+    if (!Number.isFinite(received) || received < 0 || received > line.nag) throw new AppError(400, `${line.lrNo}: received nag must be between 0 and ${line.nag}`);
+    const damagedIn = row.damagedNag == null || row.damagedNag === '' ? 0 : Number(row.damagedNag);
+    if (!Number.isFinite(damagedIn) || damagedIn < 0) throw new AppError(400, `${line.lrNo}: damaged nag cannot be negative`);
+    plan.push({ line, row, received, damaged: Math.min(damagedIn, received) });
+  }
+
+  // 2) mark each line unloaded with a conditional update: if two people unload the same
+  //    challan at once, only the first one counts (no duplicate short/damage claims)
+  const done = [];
+  for (const { line, row, received, damaged } of plan) {
+    const lrId = line.lr._id || line.lr;
+    const fields = {
+      receivedNag: received,
+      shortNag: line.nag - received,
+      damagedNag: damaged,
+      damageRemark: row.damageRemark,
+      unloadedAt: new Date(),
+    };
+    const r = await Challan.updateOne(
+      { _id: ch._id, lines: { $elemMatch: { lr: lrId, unloaded: { $ne: true } } } },
+      { $set: Object.fromEntries([['lines.$.unloaded', true], ...Object.entries(fields).map(([k, v]) => [`lines.$.${k}`, v])]) }
+    );
+    if (r.modifiedCount !== 1) continue; // someone else unloaded this line just now
+    Object.assign(line, fields, { unloaded: true });
     done.push({ line, row });
   }
-  const allDone = ch.lines.every((l) => l.unloaded);
+  if (!done.length) throw new AppError(400, 'These LRs were already unloaded (maybe by someone else just now). Refresh the challan.');
+
+  // 3) challan status from what is saved now
+  const fresh = await Challan.findById(ch._id).select('lines.unloaded arrivedAt').lean();
+  const allDone = fresh.lines.every((l) => l.unloaded);
   ch.status = allDone ? 'received' : 'partially_received';
-  ch.arrivedAt = ch.arrivedAt || new Date();
-  ch.unloadedBy = req.user._id;
-  await ch.save();
+  await Challan.updateOne(
+    { _id: ch._id },
+    { status: ch.status, arrivedAt: fresh.arrivedAt || new Date(), unloadedBy: req.user._id }
+  );
 
   const toBranch = ch.toBranch;
   for (const { line } of done) {

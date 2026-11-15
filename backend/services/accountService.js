@@ -87,6 +87,34 @@ export const syncCommission = async (lr, userId) => {
   return want;
 };
 
+// ── Safe bill allocation (two accountants saving receipts at the same moment) ──
+/**
+ * Adds `amount` to a bill's received money only if the bill is still open and the new total
+ * stays within the bill amount. Returns false if another receipt got there first.
+ */
+export const claimBill = async (billId, amount) => {
+  const amt = r2(amount);
+  const r = await Bill.updateOne(
+    {
+      _id: billId,
+      status: { $in: ['unpaid', 'partial'] },
+      $expr: { $lte: [{ $add: ['$received', amt] }, { $add: ['$total', 0.009] }] },
+    },
+    { $inc: { received: amt } }
+  );
+  if (r.modifiedCount !== 1) return false;
+  await refreshBill(billId);
+  return true;
+};
+
+/** Undo claimBill for allocations already made (used when a later step fails) */
+export const releaseBills = async (allocations) => {
+  for (const a of allocations) {
+    await Bill.updateOne({ _id: a.bill }, { $inc: { received: -r2(a.amount) } });
+    await refreshBill(a.bill);
+  }
+};
+
 // ── Bill status after a payment change ────────────────────────────────────
 export const refreshBill = async (billId) => {
   const b = await Bill.findById(billId);

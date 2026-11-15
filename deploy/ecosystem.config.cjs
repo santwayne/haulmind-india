@@ -9,7 +9,7 @@ module.exports = {
       script: 'index.js',
       exec_mode: 'fork',
       instances: 1,
-      env: { NODE_ENV: 'production' }, // everything else comes from backend/.env
+      env: { NODE_ENV: 'production', TZ: 'Asia/Kolkata' }, // everything else comes from backend/.env
       max_memory_restart: '700M',
       time: true,
       out_file: '/var/log/haulmind/out.log',

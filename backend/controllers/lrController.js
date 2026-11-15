@@ -187,7 +187,18 @@ export const lrPdfCtl = ah(async (req, res) => {
   sendPdf(res, await lrPdf(lr.toObject(), copies), `LR-${lr.lrNo}`, !!req.query.download);
 });
 
-// Public tracking – no amounts or phone numbers
+// Public tracking – no amounts, phone numbers or full names.
+// LR numbers run in sequence (LDH-2627-00001, 00002 …), so anyone could step through them:
+// names are masked ("R***** T*******") and internal history notes (cancel reasons,
+// receiver names, damage remarks) are not sent at all.
+const maskName = (name) =>
+  String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0] + '*'.repeat(Math.min(Math.max(w.length - 1, 1), 8)))
+    .join(' ');
+
 export const publicTrack = ah(async (req, res) => {
   const lr = await LR.findOne({ lrNo: String(req.params.lrNo).toUpperCase().trim() })
     .populate('bookingBranch deliveryBranch currentBranch history.branch', 'name city')
@@ -201,10 +212,10 @@ export const publicTrack = ah(async (req, res) => {
     to: lr.deliveryBranch?.name,
     currentBranch: lr.currentBranch?.name,
     totalNag: lr.totalNag,
-    consignor: lr.consignor.name,
-    consignee: lr.consignee.name,
+    consignor: maskName(lr.consignor?.name),
+    consignee: maskName(lr.consignee?.name),
     deliveredAt: lr.delivery?.at,
-    receiverName: lr.delivery?.receiverName,
-    history: lr.history.map((h) => ({ at: h.at, status: h.status, branch: h.branch?.name, note: h.note })),
+    receiverName: maskName(lr.delivery?.receiverName),
+    history: lr.history.map((h) => ({ at: h.at, status: h.status, branch: h.branch?.name })),
   });
 });

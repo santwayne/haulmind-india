@@ -9,9 +9,7 @@ import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { billPdf, receiptPdf, ledgerPdf } from '../services/pdfService.js';
 import { postCash, reverseCash } from '../services/financeService.js';
-import {
-  r2, billableFilter, billableAmount, partyBalance, unbilledAmount, refreshBill, outstandingReport,
-} from '../services/accountService.js';
+import { r2, billableFilter, billableAmount, partyBalance, unbilledAmount, refreshBill, outstandingReport, claimBill, releaseBills } from '../services/accountService.js';
 
 const oid = (x) => new mongoose.Types.ObjectId(String(x));
 const visibleBranches = (req) => (req.allBranches ? null : req.branchIds);
@@ -98,6 +96,7 @@ export const createBill = ah(async (req, res) => {
     paymentType: l.paymentType, amount: billableAmount(l),
   }));
   const subTotal = r2(lines.reduce((s, l) => s + l.amount, 0));
+  if ((Number(b.discount) || 0) < 0 || (Number(b.otherCharges) || 0) < 0) throw new AppError(400, 'Discount and other charges cannot be negative');
   const total = r2(subTotal - (Number(b.discount) || 0) + (Number(b.otherCharges) || 0));
   if (total <= 0) throw new AppError(400, 'Bill total must be more than zero');
   const billNo = await nextNumber('BL', branch.code, billDate);
@@ -166,10 +165,12 @@ export const cancelBill = ah(async (req, res) => {
   const b = await loadBill(req, req.params.id);
   if (b.status === 'cancelled') throw new AppError(400, 'Already cancelled');
   if (b.received > 0) throw new AppError(400, 'Payment is already adjusted against this bill. Cancel those receipts first.');
-  b.status = 'cancelled';
-  b.cancelReason = reason;
-  b.balance = 0;
-  await b.save();
+  // conditional: a receipt saved at the same moment cannot slip in before the cancel
+  const done = await Bill.updateOne(
+    { _id: b._id, status: { $ne: 'cancelled' }, received: { $lte: 0.009 } },
+    { status: 'cancelled', cancelReason: reason, balance: 0 }
+  );
+  if (done.modifiedCount !== 1) throw new AppError(409, 'This bill was just paid or cancelled by someone else. Refresh and check.');
   await LR.updateMany({ bill: b._id }, { billed: false, $unset: { bill: 1 } });
   await LedgerEntry.create({
     account: 'party', party: b.party._id, type: 'bill_cancel', ref: b.billNo, refId: b._id, branch: b.branch._id,
@@ -203,6 +204,7 @@ export const createReceipt = ah(async (req, res) => {
   const amount = r2(b.amount);
   const tds = r2(b.tds);
   if (amount <= 0) throw new AppError(400, 'Amount must be more than zero');
+  if (tds < 0) throw new AppError(400, 'TDS cannot be negative');
   const [party, branch] = await Promise.all([Party.findById(b.party), Branch.findById(b.branch)]);
   if (!party || !branch) throw new AppError(400, 'Party and branch are required');
   if (['bank', 'upi', 'cheque'].includes(b.mode) && !b.reference) throw new AppError(400, 'Enter UTR / cheque number for bank payments');
@@ -215,6 +217,7 @@ export const createReceipt = ah(async (req, res) => {
       const bill = open.find((x) => String(x._id) === String(a.bill));
       const amt = r2(a.amount);
       if (!amt) continue;
+      if (amt < 0) throw new AppError(400, 'Adjusted amount cannot be negative');
       if (!bill) throw new AppError(400, 'A selected bill is not open for this party');
       if (amt > bill.balance + 0.009) throw new AppError(400, `${bill.billNo}: only ₹${bill.balance} is pending`);
       if (amt > pool + 0.009) throw new AppError(400, 'Adjusted amount is more than the money received');
@@ -229,17 +232,29 @@ export const createReceipt = ah(async (req, res) => {
       pool = r2(pool - amt);
     }
   }
-  const date = b.date ? new Date(b.date) : new Date();
-  const receiptNo = await nextNumber('RC', branch.code, date);
-  const receipt = await Receipt.create({
-    receiptNo, date, branch: branch._id, party: party._id, partyName: party.name, amount, tds,
-    mode: b.mode || 'cash', bankName: b.bankName, reference: b.reference, allocations, onAccount: pool,
-    narration: b.narration, createdBy: req.user._id,
-  });
+  // Lock the money on each bill first; if another receipt got there first, undo and stop
+  const claimed = [];
   for (const a of allocations) {
-    await Bill.updateOne({ _id: a.bill }, { $inc: { received: a.amount } });
-    await refreshBill(a.bill);
+    if (!(await claimBill(a.bill, a.amount))) {
+      await releaseBills(claimed);
+      throw new AppError(409, `${a.billNo} was just updated by someone else. Refresh and try again.`);
+    }
+    claimed.push(a);
   }
+  const date = b.date ? new Date(b.date) : new Date();
+  let receipt;
+  try {
+    const receiptNo = await nextNumber('RC', branch.code, date);
+    receipt = await Receipt.create({
+      receiptNo, date, branch: branch._id, party: party._id, partyName: party.name, amount, tds,
+      mode: b.mode || 'cash', bankName: b.bankName, reference: b.reference, allocations, onAccount: pool,
+      narration: b.narration, createdBy: req.user._id,
+    });
+  } catch (e) {
+    await releaseBills(claimed); // receipt not saved → give the bills their balance back
+    throw e;
+  }
+  const { receiptNo } = receipt;
   const cash = await postCash({ accountId: b.account, branchId: branch._id, mode: receipt.mode, direction: 'in', amount, category: 'party_receipt', date, refType: 'Receipt', refId: receipt._id, ref: receiptNo, party: party._id, narration: `${party.name} – ${receiptNo}${b.reference ? ' ' + b.reference : ''}`, createdBy: req.user._id });
   if (cash) { receipt.account = cash.account; await receipt.save(); }
   await LedgerEntry.create({
@@ -291,9 +306,9 @@ export const cancelReceipt = ah(async (req, res) => {
   if (!reason) throw new AppError(400, 'Give a reason for cancelling');
   const r = await loadReceipt(req, req.params.id);
   if (r.status === 'cancelled') throw new AppError(400, 'Already cancelled');
-  r.status = 'cancelled';
-  r.cancelReason = reason;
-  await r.save();
+  // conditional: two clicks / two users cannot reverse the same receipt twice
+  const flipped = await Receipt.updateOne({ _id: r._id, status: { $ne: 'cancelled' } }, { status: 'cancelled', cancelReason: reason });
+  if (flipped.modifiedCount !== 1) throw new AppError(409, 'This receipt was cancelled by someone else just now');
   for (const a of r.allocations) {
     await Bill.updateOne({ _id: a.bill }, { $inc: { received: -a.amount } });
     await refreshBill(a.bill);
@@ -317,17 +332,26 @@ export const adjustOnAccount = ah(async (req, res) => {
   for (const bill of open) {
     if (pool <= 0) break;
     const amt = r2(Math.min(pool, bill.balance));
-    await Bill.updateOne({ _id: bill._id }, { $inc: { received: amt } });
-    await refreshBill(bill._id);
+    if (amt <= 0) continue;
+    if (!(await claimBill(bill._id, amt))) {
+      await releaseBills(added);
+      throw new AppError(409, `${bill.billNo} was just updated by someone else. Refresh and try again.`);
+    }
     added.push({ bill: bill._id, billNo: bill.billNo, amount: amt });
     pool = r2(pool - amt);
   }
   if (!added.length) throw new AppError(400, 'No open bill for this party');
-  r.allocations.push(...added);
-  r.onAccount = pool;
-  await r.save();
+  // conditional: the same on-account money cannot be adjusted twice at the same moment
+  const saved = await Receipt.updateOne(
+    { _id: r._id, status: 'active', onAccount: r.onAccount },
+    { $set: { onAccount: pool }, $push: { allocations: { $each: added } } }
+  );
+  if (saved.modifiedCount !== 1) {
+    await releaseBills(added);
+    throw new AppError(409, 'This receipt was just changed by someone else. Refresh and try again.');
+  }
   await audit(req, { action: 'update', entity: 'Receipt', entityId: r._id, ref: r.receiptNo, changes: { adjusted: added.map((a) => `${a.billNo}:${a.amount}`) } });
-  ok(res, r, `Adjusted against ${added.map((a) => a.billNo).join(', ')}`);
+  ok(res, await Receipt.findById(r._id).lean(), `Adjusted against ${added.map((a) => a.billNo).join(', ')}`);
 });
 
 // ═════════════════════════════ LEDGERS ═════════════════════════════════════

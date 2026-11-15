@@ -1,5 +1,11 @@
 import 'dotenv/config';
 
+// Every date in this app is Indian time: LR / bill dates on PDFs, "today" on the dashboard,
+// date filters, and the financial year in LR numbers (1 April 00:00 IST). Servers (EC2) run
+// on UTC, so without this an LR booked at 2 AM IST printed the previous day.
+// Node re-reads TZ when it changes, so setting it here (before any request) is enough.
+process.env.TZ = process.env.TZ || 'Asia/Kolkata';
+
 export const config = {
   PORT: process.env.PORT || 5000,
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -22,6 +28,9 @@ export const config = {
   BACKUP_DIR: process.env.BACKUP_DIR || './backups',
   BACKUP_CRON: process.env.BACKUP_CRON || '0 5 * * *', // every day 5:00 AM IST
   BACKUP_KEEP_DAYS: Number(process.env.BACKUP_KEEP_DAYS || 30),
+  // Optional: copy each night's backup off this server, e.g.
+  //   aws s3 sync ./backups s3://YOUR-BUCKET/haulmind-tcl --only-show-errors
+  BACKUP_SYNC_CMD: process.env.BACKUP_SYNC_CMD || '',
   REMINDER_CRON: process.env.REMINDER_CRON || '30 10 * * *', // daily 10:30 AM IST check
   REMINDER_EVERY_DAYS: Number(process.env.REMINDER_EVERY_DAYS || 15),
 };

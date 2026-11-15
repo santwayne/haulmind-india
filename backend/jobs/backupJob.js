@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
+import { exec } from 'child_process';
 import { EJSON } from 'bson';
 import { config } from '../config/config.js';
 
@@ -31,7 +32,18 @@ export const runBackup = async () => {
     if (!Number.isNaN(t) && t < keepAfter) fs.rmSync(path.resolve(config.BACKUP_DIR, d), { recursive: true, force: true });
   }
   console.log(`💾 Backup ${stamp}: ${cols.length} collections, ${docs} documents`);
-  return { dir, collections: cols.length, documents: docs };
+  // Copy off this server (a backup on the same disk is lost with the server)
+  let synced = null;
+  if (config.BACKUP_SYNC_CMD) {
+    synced = await new Promise((resolve) =>
+      exec(config.BACKUP_SYNC_CMD, { timeout: 30 * 60 * 1000 }, (err, stdout, stderr) => {
+        if (err) console.error('❌ Backup copy off-server failed:', stderr || err.message);
+        else console.log('☁️  Backup copied off-server');
+        resolve(!err);
+      })
+    );
+  }
+  return { dir, collections: cols.length, documents: docs, synced };
 };
 
 export const scheduleBackup = () =>

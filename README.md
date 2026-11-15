@@ -60,6 +60,15 @@ and a bill with payments cannot be cancelled until those receipts are cancelled.
 | 11. Who we have to pay – truck owners, brokers, party advances | `pages/Payables.tsx` |
 | 12. Vouch import – parties with opening balance, brokers, last year's LRs, cash/bank opening; Excel or CSV, Vouch column names understood, preview with row errors before saving; POD/DC zip matched to LR numbers | `controllers/importController.js`, `pages/ImportData.tsx` |
 
+## Production notes
+
+- **Time zone:** the API runs on Indian time (`TZ=Asia/Kolkata`, set in `config/config.js` and the PM2 file), so LR / bill dates, "today" on the dashboard and the financial year in LR numbers are correct on a UTC server.
+- **JWT_SECRET:** the API will not start in production without a random secret of 32+ characters (`deploy/setup-ec2.sh` writes one).
+- **Login:** 8 wrong passwords for one username (or 30 from one IP) block that login for 15 minutes.
+- **Public tracking** (`/track`) shows status and branches only; party and receiver names are masked.
+- **Money under load:** receipts, on-account adjustments, receipt and bill cancels, and challan unloading use conditional database updates, so two people saving at the same moment cannot double-count.
+- **Backups off the server:** set `BACKUP_SYNC_CMD` in `.env` (e.g. `aws s3 sync ./backups s3://YOUR-BUCKET/haulmind-tcl --only-show-errors`); it runs after every 5 AM backup.
+
 ## Run locally
 
 Needs Node 20+ and MongoDB (local or Atlas).
