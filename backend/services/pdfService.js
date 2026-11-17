@@ -14,10 +14,13 @@ const header = (doc, title, no, date, branch, noLabel = 'No. ') => {
   const w = doc.page.width - 80;
   doc.rect(40, 40, w, 56).fill(ACCENT);
   doc.fill('#fff').font('Helvetica-Bold').fontSize(18).text(config.COMPANY_NAME.toUpperCase(), 52, 50);
-  doc.font('Helvetica').fontSize(8.5).text(
-    branch ? `${branch.name} (${branch.code})${branch.address ? ' · ' + branch.address : ''}${branch.phone ? ' · Ph ' + branch.phone : ''}` : '',
-    52, 74, { width: w - 200 }
-  );
+  // Branch block under the company name: address on line 1, phone + GSTIN on line 2
+  if (branch) {
+    const addr = [branch.address, branch.address?.toLowerCase().includes(String(branch.city || '').toLowerCase()) ? null : branch.city].filter(Boolean).join(', ');
+    const contact = [branch.phone && `Ph ${branch.phone}`, branch.gstin && `GSTIN ${branch.gstin}`].filter(Boolean).join(' · ');
+    doc.font('Helvetica').fontSize(8).text(`${branch.name} (${branch.code})${addr ? ' · ' + addr : ''}`, 52, 72, { width: w - 200, height: 10, ellipsis: true, lineBreak: false });
+    if (contact) doc.text(contact, 52, 83, { width: w - 200, height: 10, ellipsis: true, lineBreak: false });
+  }
   doc.font('Helvetica-Bold').fontSize(13).text(title, 40, 50, { width: w - 12, align: 'right' });
   doc.font('Helvetica').fontSize(9).text(`${noLabel}${no}`, 40, 68, { width: w - 12, align: 'right' });
   doc.text(`Date: ${dt(date)}`, 40, 80, { width: w - 12, align: 'right' });

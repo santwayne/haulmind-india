@@ -12,8 +12,8 @@ import { creditCheck, syncCommission } from '../services/accountService.js';
 import { postCash, reverseCash } from '../services/financeService.js';
 
 const POP = [
-  { path: 'bookingBranch', select: 'name code address phone' },
-  { path: 'deliveryBranch', select: 'name code address phone' },
+  { path: 'bookingBranch', select: 'name code address city phone gstin' },
+  { path: 'deliveryBranch', select: 'name code address city phone gstin' },
   { path: 'currentBranch', select: 'name code' },
   { path: 'broker', select: 'name' },
   { path: 'history.branch', select: 'name code' },

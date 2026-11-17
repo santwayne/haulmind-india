@@ -79,7 +79,7 @@ export const addPod = ah(async (req, res) => {
 });
 
 export const dcPdfCtl = ah(async (req, res) => {
-  const lr = await LR.findById(req.params.id).populate('bookingBranch deliveryBranch', 'name code address phone');
+  const lr = await LR.findById(req.params.id).populate('bookingBranch deliveryBranch', 'name code address city phone gstin');
   if (!lr || lr.status !== 'delivered') throw new AppError(404, 'No delivery challan for this LR');
   assertBranch(req, lr.deliveryBranch._id);
   sendPdf(res, await dcPdf(lr.toObject()), lr.delivery.dcNo);

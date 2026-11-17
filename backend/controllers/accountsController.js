@@ -143,7 +143,7 @@ export const listBills = ah(async (req, res) => {
 });
 
 const loadBill = async (req, id) => {
-  const b = await Bill.findById(id).populate('branch', 'name code address phone gstin').populate('party', 'name mobile address city state gstin');
+  const b = await Bill.findById(id).populate('branch', 'name code address city phone gstin').populate('party', 'name mobile address city state gstin');
   if (!b) throw new AppError(404, 'Bill not found');
   assertBranch(req, b.branch._id);
   return b;
@@ -289,7 +289,7 @@ export const listReceipts = ah(async (req, res) => {
 });
 
 const loadReceipt = async (req, id) => {
-  const r = await Receipt.findById(id).populate('branch', 'name code address phone').populate('party', 'name mobile address city gstin');
+  const r = await Receipt.findById(id).populate('branch', 'name code address city phone gstin').populate('party', 'name mobile address city gstin');
   if (!r) throw new AppError(404, 'Receipt not found');
   assertBranch(req, r.branch._id);
   return r;

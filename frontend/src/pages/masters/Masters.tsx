@@ -94,8 +94,8 @@ const DEFS: Record<string, Def> = {
       { name: 'city', label: 'City', span: 8, input: txt },
       { name: 'phone', label: 'Phone', span: 8, input: txt },
       { name: 'managerName', label: 'Manager', span: 8, input: txt },
-      { name: 'gstin', label: 'GSTIN', span: 12, input: txt },
-      { name: 'address', label: 'Address (printed on LR)', span: 24, input: txt },
+      { name: 'gstin', label: 'GSTIN (printed on all PDFs)', span: 12, input: () => <Input maxLength={15} style={{ textTransform: 'uppercase' }} /> },
+      { name: 'address', label: 'Address (printed on bilty, challan, DC, bill, receipt)', span: 24, input: txt },
     ],
     toForm: (r) => ({ ...r, parentHub: r.parentHub?._id }),
     columns: () => [
@@ -104,6 +104,14 @@ const DEFS: Record<string, Def> = {
       { title: 'Under hub', render: (_: unknown, r: any) => r.parentHub?.name },
       { title: 'Phone', dataIndex: 'phone' },
       { title: 'Manager', dataIndex: 'managerName' },
+      {
+        title: 'On bilty / bill',
+        // address, phone and GSTIN print in the header of every bilty, challan, DC, bill and receipt
+        render: (_: unknown, r: any) => {
+          const miss = [!r.address && 'address', !r.phone && 'phone', !r.gstin && 'GSTIN'].filter(Boolean);
+          return miss.length ? <Tag color="orange">Missing {miss.join(', ')}</Tag> : <Tag color="green">Complete</Tag>;
+        },
+      },
     ],
   },
   rates: {
