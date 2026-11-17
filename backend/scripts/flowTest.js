@@ -395,7 +395,10 @@ try {
   r = await api('GET', '/dashboard');
   assert.equal(r.data.totals.bookings, 5); // C + paid LR cancelled, 3 TBB added
   assert.equal(r.data.totals.billed, 2900);
-  assert.equal(r.data.totals.outstanding, 1000);
+  assert.equal(r.data.totals.billsOutstanding, 1000); // unpaid bill balances only
+  const osTotals = (await api('GET', '/reports/outstanding')).data.totals;
+  assert.equal(r.data.totals.outstanding, osTotals.net); // tile = Outstanding report (bills + opening − advance)
+  assert.equal(r.data.totals.unbilled, osTotals.unbilled);
   assert.equal(r.data.totals.deliveredLrs, 1);
   assert.equal(r.data.totals.toDeliver, 1); // B at Jalandhar
   step(`dashboard: ${JSON.stringify(r.data.totals)}`);
