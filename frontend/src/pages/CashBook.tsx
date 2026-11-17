@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { App, Button, Checkbox, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Select, Table, Tag } from 'antd';
+import { Alert, App, Button, Checkbox, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Select, Table, Tag } from 'antd';
 import { Printer, Plus, Pencil, Landmark, Wallet } from 'lucide-react';
 import dayjs, { type Dayjs } from 'dayjs';
 import { api, errMsg, openPdf } from '../api/client';
@@ -48,6 +48,11 @@ export default function CashBook() {
         <h1 className="page-title">Cash & bank book</h1>
         {can(user, ...HQ) && <Button icon={<Plus size={15} />} onClick={() => { form.resetFields(); form.setFieldsValue({ type: 'bank' }); setEdit({}); }}>Add bank / cash account</Button>}
       </div>
+      {list.some((a) => a.balance < 0) && (
+        <Alert type="error" showIcon
+          message={`Balance below zero: ${list.filter((a) => a.balance < 0).map((a) => `${a.name} ${inr(a.balance)}`).join(' · ')}`}
+          description="A cash box can't really hold less than zero – usually the opening balance was never entered or an entry is missing. Fix the opening balance (pencil icon). New cash payments larger than the cash in the box are now blocked." />
+      )}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {list.map((a) => (
           <button key={a._id} onClick={() => setAccount(a._id)}

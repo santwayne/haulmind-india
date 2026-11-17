@@ -9,7 +9,7 @@ import { ah, ok, AppError, sendPdf, paginate } from '../utils/http.js';
 import { assertBranch } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
-import { postCash, reverseCash, resolveAccount, accountBalances, cashAccountFor } from '../services/financeService.js';
+import { postCash, reverseCash, resolveAccount, accountBalances, cashAccountFor, assertFunds } from '../services/financeService.js';
 import { cashBookPdf, pnlPdf } from '../services/pdfService.js';
 
 const oid = (x) => new mongoose.Types.ObjectId(String(x));
@@ -90,6 +90,8 @@ export const createVoucher = ah(async (req, res) => {
   if (!['expense', 'income', 'contra'].includes(b.type)) throw new AppError(400, 'Choose expense, income or contra');
   if (b.type !== 'contra' && !b.head) throw new AppError(400, 'Choose the head (e.g. Rent, Salary)');
   const branch = await Branch.findById(b.branch);
+  if (b.type === 'contra') await assertFunds({ accountId: b.account, amount });
+  else if (b.type === 'expense') await assertFunds({ accountId: b.account, branchId: branch._id, mode: b.mode || 'cash', amount });
   const date = b.date ? new Date(b.date) : new Date();
   const voucherNo = await nextNumber('VC', branch.code, date);
   const refId = new mongoose.Types.ObjectId();
@@ -189,6 +191,7 @@ export const payLorryHire = ah(async (req, res) => {
   const pending = r2(ch.lorryHire - (ch.hirePaid || 0));
   if (amount <= 0) throw new AppError(400, 'Amount must be more than zero');
   if (amount > pending + 0.009) throw new AppError(400, `Only ₹${pending} lorry hire is pending`);
+  await assertFunds({ accountId: req.body?.account, branchId: branch, mode: req.body?.mode || 'cash', amount });
   await postCash({ accountId: req.body?.account, branchId: branch, mode: req.body?.mode || 'cash', direction: 'out', amount, category: 'lorry_hire', refType: 'Challan', refId: ch._id, ref: ch.challanNo, narration: `Lorry hire balance – ${ch.vehicleNo || ''} ${ch.challanNo}${req.body?.narration ? ' – ' + req.body.narration : ''}`, createdBy: req.user._id });
   ch.hirePaid = r2((ch.hirePaid || 0) + amount);
   ch.hireSettled = ch.hirePaid >= ch.lorryHire - 0.009;

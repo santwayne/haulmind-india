@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Branch } from '../models/masterModels.js';
 import { MoneyAccount, CashEntry, AccountHead, DEFAULT_HEADS } from '../models/financeModels.js';
 import { AppError } from '../utils/http.js';
+import { config } from '../config/config.js';
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const oid = (x) => new mongoose.Types.ObjectId(String(x));
@@ -34,6 +35,32 @@ export const resolveAccount = async ({ accountId, branchId, mode = 'cash' }) => 
     return a;
   }
   return mode === 'cash' ? cashAccountFor(branchId) : bankAccountFor(branchId);
+};
+
+/** Current balance of one money account: opening + all in − all out */
+export const accountBalance = async (account) => {
+  const [x] = await CashEntry.aggregate([
+    { $match: { account: oid(account._id) } },
+    { $group: { _id: null, in: { $sum: { $cond: [{ $eq: ['$direction', 'in'] }, '$amount', 0] } }, out: { $sum: { $cond: [{ $eq: ['$direction', 'out'] }, '$amount', 0] } } } },
+  ]);
+  return r2((account.openingBalance || 0) + (x?.in || 0) - (x?.out || 0));
+};
+
+/**
+ * Call BEFORE saving a document that pays money out (voucher, lorry hire, broker payment).
+ * A branch cash box can't pay more than the cash in it – the books went to −₹39,960 at LDH
+ * because nothing stopped this. Bank accounts may go below zero (OD / CC limits are common)
+ * and only get a warning on the cash & bank screen. ALLOW_NEGATIVE_CASH=true switches the block off.
+ */
+export const assertFunds = async ({ accountId, branchId, mode = 'cash', amount }) => {
+  const amt = r2(amount);
+  if (amt <= 0 || config.ALLOW_NEGATIVE_CASH) return;
+  const account = await resolveAccount({ accountId, branchId, mode });
+  if (account.type !== 'cash') return;
+  const bal = await accountBalance(account);
+  if (amt > bal + 0.009) {
+    throw new AppError(400, `${account.name} has only ₹${bal.toLocaleString('en-IN')} – cannot pay ₹${amt.toLocaleString('en-IN')} in cash. Enter the cash opening balance (Cash & bank) or pay from bank.`);
+  }
 };
 
 export const postCash = async ({ accountId, branchId, mode, direction, amount, category, date, ...rest }) => {

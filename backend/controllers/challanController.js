@@ -8,7 +8,7 @@ import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { challanPdf } from '../services/pdfService.js';
-import { postCash, reverseCash } from '../services/financeService.js';
+import { postCash, reverseCash, assertFunds } from '../services/financeService.js';
 
 const POP = [
   { path: 'fromBranch', select: 'name code address phone' },
@@ -44,6 +44,7 @@ export const createChallan = ah(async (req, res) => {
   if (String(b.fromBranch) === String(b.toBranch)) throw new AppError(400, 'From and To branch cannot be the same');
   const [from, to] = await Promise.all([Branch.findById(b.fromBranch), Branch.findById(b.toBranch)]);
   if (!from || !to) throw new AppError(400, 'Invalid branch');
+  await assertFunds({ accountId: b.hireAccount, branchId: from._id, mode: b.hireMode || 'cash', amount: b.advancePaid });
 
   let vehicle = null;
   if (b.vehicleNo) {
