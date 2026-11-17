@@ -5,6 +5,7 @@ import { Branch } from '../models/masterModels.js';
 import { AuditLog, Notification, BranchAlert, Claim } from '../models/systemModels.js';
 import { Bill, Receipt } from '../models/accountsModels.js';
 import { ah, ok, dayRange, paginate } from '../utils/http.js';
+import { outstandingReport } from '../services/accountService.js';
 import { assertBranch } from '../middleware/authRoles.js';
 
 const oid = (x) => new mongoose.Types.ObjectId(String(x));
@@ -121,6 +122,18 @@ export const dashboard = ah(async (req, res) => {
     outstanding: sum((r) => r.money.outstanding),
     overdue: sum((r) => r.money.overdue),
   };
+  // "Outstanding now" must match the Outstanding report: unpaid bills + parties' opening
+  // balances (taken over from Vouch) − advances kept on account. Unbilled TBB freight is shown
+  // separately. Opening balances are company-level, so this is only for the all-branches view.
+  if (!ids) {
+    const os = (await outstandingReport({})).totals;
+    totals.billsOutstanding = totals.outstanding;
+    totals.openingDue = os.opening || 0;
+    totals.onAccount = os.onAccount || 0;
+    totals.unbilled = os.unbilled || 0;
+    totals.outstanding = os.net || 0;
+    totals.overdue = os.overdue || 0;
+  }
 
   // 7-day booking trend
   const weekStart = new Date(end);

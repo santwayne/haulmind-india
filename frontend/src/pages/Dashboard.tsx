@@ -79,7 +79,12 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <Kpi label={`Billed ${when}`} value={inr(t.billed)} to="/billing" />
               <Kpi label={`Payment received ${when}`} value={inr(t.received)} to="/receipts" />
-              <Kpi label="Outstanding now" value={inr(t.outstanding)} sub="unpaid bills" to="/outstanding" />
+              <Kpi
+                label="Outstanding now" value={inr(t.outstanding)} to="/outstanding"
+                sub={t.billsOutstanding != null
+                  ? [`bills ${inr(t.billsOutstanding)}`, t.openingDue ? `opening ${inr(t.openingDue)}` : '', t.onAccount ? `− advance ${inr(t.onAccount)}` : '', t.unbilled ? `+ ${inr(t.unbilled)} not billed yet` : ''].filter(Boolean).join(' · ')
+                  : 'unpaid bills of this branch'}
+              />
               <Kpi label="Overdue" value={inr(t.overdue)} sub="past credit days" to="/outstanding" />
             </div>
           )}
