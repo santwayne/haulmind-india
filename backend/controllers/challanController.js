@@ -11,7 +11,7 @@ import { challanPdf } from '../services/pdfService.js';
 import { postCash, reverseCash } from '../services/financeService.js';
 
 const POP = [
-  { path: 'fromBranch', select: 'name code address phone' },
+  { path: 'fromBranch', select: 'name code address city phone gstin' },
   { path: 'toBranch', select: 'name code' },
   { path: 'lines.lr', select: 'lrNo consignor consignee deliveryBranch totalNag totalWeight status paymentType freight.total' },
 ];

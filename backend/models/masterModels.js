@@ -12,7 +12,7 @@ const branchSchema = new mongoose.Schema(
     address: String,
     phone: String,
     managerName: String,
-    gstin: String,
+    gstin: { type: String, uppercase: true, trim: true }, // printed on every PDF header
     parentHub: { type: ObjectId, ref: 'Branch' },
     active: { type: Boolean, default: true },
   },
