@@ -88,7 +88,7 @@ export const createLR = ah(async (req, res) => {
   if (b.notifyConsignor !== false) {
     notify({
       event: 'lr_booked', mobile: consignor.mobile, lr: lr._id, party: consignor.party,
-      params: { lrNo, nag: totals.nag, from: bk.name, to: dl.name, trackUrl: `${config.PUBLIC_TRACK_URL}?lr=${encodeURIComponent(lrNo)}` },
+      params: { lrNo, nag: totals.nag, from: bk.name, to: dl.name, trackUrl: config.PUBLIC_TRACK_URL ? `${config.PUBLIC_TRACK_URL}?lr=${encodeURIComponent(lrNo)}` : '' },
     });
   }
   ok(res, { lr: await LR.findById(lr._id).populate(POP).lean(), warning }, `LR ${lrNo} booked`, 201);

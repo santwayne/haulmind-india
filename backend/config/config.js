@@ -6,6 +6,13 @@ import 'dotenv/config';
 // Node re-reads TZ when it changes, so setting it here (before any request) is enough.
 process.env.TZ = process.env.TZ || 'Asia/Kolkata';
 
+// "https://YOUR-APP-DOMAIN/track" etc. → '' ; trailing slash removed
+const realUrl = (v) => {
+  const u = String(v || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(u) || /YOUR-?(APP-)?DOMAIN|example\.com/i.test(u)) return '';
+  return u;
+};
+
 export const config = {
   PORT: process.env.PORT || 5000,
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -17,7 +24,9 @@ export const config = {
   PRODUCT_NAME: 'HaulMind India',
   // The transport company using this install (printed on LR, challan, DC, messages)
   COMPANY_NAME: process.env.COMPANY_NAME || 'TCL Logistics',
-  PUBLIC_TRACK_URL: process.env.PUBLIC_TRACK_URL || 'http://localhost:5173/track',
+  // Public tracking page sent in WhatsApp/SMS. A value still holding the .env.example placeholder
+  // (YOUR-APP-DOMAIN) is treated as "not set" so customers never get a broken link.
+  PUBLIC_TRACK_URL: realUrl(process.env.PUBLIC_TRACK_URL) || (realUrl(process.env.APP_URL) && `${realUrl(process.env.APP_URL)}/track`) || '',
   // Notifications: provider = "log" (default, dev), "whatsapp" (Meta Cloud API), "msg91" (SMS)
   NOTIFY_PROVIDER: process.env.NOTIFY_PROVIDER || 'log',
   WA_TOKEN: process.env.WA_TOKEN,

@@ -5,6 +5,7 @@ import { connectDB } from './config/mongoConnection.js';
 import { scheduleBackup } from './jobs/backupJob.js';
 import { scheduleReminders } from './jobs/reminderJob.js';
 import { ensureDefaultHeads } from './services/financeService.js';
+import { Notification } from './models/systemModels.js';
 
 const start = async () => {
   // Never run in production with the built-in fallback secret: anyone who knows it could
@@ -12,8 +13,17 @@ const start = async () => {
   if (config.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-this-secret' || process.env.JWT_SECRET.length < 32)) {
     throw new Error('JWT_SECRET is missing or too short in backend/.env (needs 32+ random characters, e.g. `openssl rand -hex 32`)');
   }
+  if (!config.PUBLIC_TRACK_URL) {
+    console.warn('⚠️  PUBLIC_TRACK_URL is not set to the real domain in backend/.env – WhatsApp/SMS will go WITHOUT a tracking link. Set e.g. PUBLIC_TRACK_URL=https://haulmindin.wayneesolutions.com/track');
+  }
+  if (!['whatsapp', 'msg91'].includes(config.NOTIFY_PROVIDER)) {
+    console.warn(`⚠️  NOTIFY_PROVIDER=${config.NOTIFY_PROVIDER}: WhatsApp/SMS are only logged, nobody receives them.`);
+  }
   await connectDB();
   await ensureDefaultHeads();
+  // Earlier builds saved "log"-mode messages as "sent". They were never delivered – correct them once.
+  const fixed = await Notification.updateMany({ channel: 'log', status: 'sent' }, { status: 'logged' });
+  if (fixed.modifiedCount) console.log(`📨 ${fixed.modifiedCount} old log-only messages re-marked as "logged" (not sent)`);
   scheduleBackup();
   scheduleReminders();
   http.createServer(app).listen(config.PORT, '0.0.0.0', () => {
