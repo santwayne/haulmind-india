@@ -7,6 +7,7 @@ import { assertBranch } from '../middleware/authRoles.js';
 import { nextNumber } from '../services/numbering.js';
 import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
+import { calendarDays } from '../jobs/reminderJob.js';
 import { billPdf, receiptPdf, ledgerPdf } from '../services/pdfService.js';
 import { postCash, reverseCash } from '../services/financeService.js';
 import { r2, billableFilter, billableAmount, partyBalance, unbilledAmount, refreshBill, outstandingReport, claimBill, releaseBills } from '../services/accountService.js';
@@ -460,10 +461,10 @@ export const sendReminder = ah(async (req, res) => {
   const balance = await partyBalance(party._id);
   if (balance <= 0) throw new AppError(400, `${party.name} has nothing pending`);
   const oldest = await Bill.findOne({ party: party._id, status: { $in: ['unpaid', 'partial'] } }).sort({ billDate: 1 }).select('billDate').lean();
-  const days = oldest ? Math.floor((Date.now() - new Date(oldest.billDate)) / 86400000) : 0;
+  const days = oldest ? calendarDays(oldest.billDate) : 0; // calendar days in IST: bill yesterday → 1
   const rec = await notify({ event: 'payment_reminder', mobile: party.mobile, party: party._id, params: { amount: Math.round(balance), days } });
   party.lastReminderAt = new Date();
   await party.save();
   await audit(req, { action: 'status', entity: 'Party', entityId: party._id, ref: party.name, changes: { reminder: rec?.status, amount: balance } });
-  ok(res, { status: rec?.status, amount: balance, days }, rec?.status === 'skipped' ? 'No valid mobile number on this party' : 'Reminder sent');
+  ok(res, { status: rec?.status, amount: balance, days }, rec?.status === 'skipped' ? 'No valid mobile number on this party' : rec?.status === 'logged' ? 'Reminder logged (WhatsApp/SMS not connected yet – not delivered)' : rec?.status === 'failed' ? 'Reminder could not be sent – see message log' : 'Reminder sent');
 });
