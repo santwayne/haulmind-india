@@ -15,7 +15,7 @@ import { Notification } from '../models/systemModels.js';
 export const TEMPLATES = {
   lr_booked: {
     wa: 'hm_lr_booked',
-    text: (p) => `${config.COMPANY_NAME}: Aapka maal book ho gaya hai. LR ${p.lrNo}, ${p.nag} nag, ${p.from} se ${p.to}. Track: ${p.trackUrl}`,
+    text: (p) => `${config.COMPANY_NAME}: Aapka maal book ho gaya hai. LR ${p.lrNo}, ${p.nag} nag, ${p.from} se ${p.to}.${p.trackUrl ? ` Track: ${p.trackUrl}` : ''}`,
   },
   lr_unloaded: {
     wa: 'hm_lr_arrived',
@@ -83,12 +83,14 @@ export const notify = async ({ event, mobile, params, lr, party }) => {
   if (!to || !rec) return rec;
 
   try {
-    let id;
-    if (config.NOTIFY_PROVIDER === 'whatsapp') id = await sendWhatsApp(to, event, params);
-    else if (config.NOTIFY_PROVIDER === 'msg91') id = await sendSms(to, event, params);
-    else console.log(`📨 [${event}] → ${to}: ${message}`);
-    rec.status = 'sent';
-    rec.providerId = id;
+    if (config.NOTIFY_PROVIDER === 'whatsapp' || config.NOTIFY_PROVIDER === 'msg91') {
+      rec.providerId = config.NOTIFY_PROVIDER === 'whatsapp' ? await sendWhatsApp(to, event, params) : await sendSms(to, event, params);
+      rec.status = 'sent';
+    } else {
+      // No provider connected yet: the message is only stored. Never call this "sent".
+      console.log(`📨 [${event}] → ${to} (logged, not sent): ${message}`);
+      rec.status = 'logged';
+    }
   } catch (e) {
     rec.status = 'failed';
     rec.error = (e.response?.data ? JSON.stringify(e.response.data) : e.message).slice(0, 500);

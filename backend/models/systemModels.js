@@ -29,7 +29,8 @@ const notificationSchema = new mongoose.Schema(
     party: { type: ObjectId, ref: 'Party' },
     lr: { type: ObjectId, ref: 'LR' },
     message: String,
-    status: { type: String, enum: ['queued', 'sent', 'failed', 'skipped'], default: 'queued' },
+    // logged = provider is "log": saved here only, NOT delivered to the customer
+    status: { type: String, enum: ['queued', 'sent', 'logged', 'failed', 'skipped'], default: 'queued' },
     error: String,
     providerId: String,
   },

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { App, Button, Input, Select, Table, Tabs, Tag } from 'antd';
+import { Alert, App, Button, Input, Select, Table, Tabs, Tag } from 'antd';
 import { useGet } from '../api/hooks';
 import { api, errMsg } from '../api/client';
 import { useAppSelector } from '../redux/store';
@@ -51,7 +51,12 @@ function Messages() {
   return (
     <>
       <Select allowClear placeholder="All" value={status} onChange={setStatus} className="mb-3 min-w-[140px]"
-        options={['sent', 'failed', 'skipped', 'queued'].map((x) => ({ value: x, label: x }))} />
+        options={['sent', 'logged', 'failed', 'skipped', 'queued'].map((x) => ({ value: x, label: x === 'logged' ? 'logged (not sent)' : x }))} />
+      {data?.items?.some((r: any) => r.channel === 'log') && (
+        <Alert className="mb-3" type="warning" showIcon
+          message="WhatsApp / SMS is not connected yet"
+          description="Messages marked “logged – not sent” were only saved here. Customers did not receive them. They go out once the WhatsApp templates are approved and the provider is switched on." />
+      )}
       <Table
         size="small" rowKey="_id" loading={loading} dataSource={data?.items || []} scroll={{ x: 800 }}
         pagination={{ current: page, total: data?.total, pageSize: 50, onChange: setPage, showSizeChanger: false }}
@@ -61,7 +66,13 @@ function Messages() {
           { title: 'To', dataIndex: 'to', width: 130 },
           { title: 'Via', dataIndex: 'channel', width: 90 },
           { title: 'Message', dataIndex: 'message' },
-          { title: 'Status', dataIndex: 'status', width: 90, render: (v, r: any) => <Tag color={v === 'sent' ? 'green' : v === 'failed' ? 'red' : 'default'} title={r.error}>{v}</Tag> },
+          {
+            title: 'Status', dataIndex: 'status', width: 130,
+            // older rows from "log" mode were saved as "sent" – they were never delivered either
+            render: (v, r: any) => (r.channel === 'log' && (v === 'sent' || v === 'logged')
+              ? <Tag color="orange" title="Only saved – WhatsApp/SMS provider not connected">logged – not sent</Tag>
+              : <Tag color={v === 'sent' ? 'green' : v === 'failed' ? 'red' : 'default'} title={r.error}>{v}</Tag>),
+          },
         ]}
       />
     </>
