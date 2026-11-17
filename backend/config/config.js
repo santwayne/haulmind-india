@@ -42,4 +42,6 @@ export const config = {
   BACKUP_SYNC_CMD: process.env.BACKUP_SYNC_CMD || '',
   REMINDER_CRON: process.env.REMINDER_CRON || '30 10 * * *', // daily 10:30 AM IST check
   REMINDER_EVERY_DAYS: Number(process.env.REMINDER_EVERY_DAYS || 15),
+  // Remind only after a bill crosses its due date (bill date + party credit days). TCL to confirm.
+  REMINDER_ONLY_OVERDUE: process.env.REMINDER_ONLY_OVERDUE !== 'false',
 };
