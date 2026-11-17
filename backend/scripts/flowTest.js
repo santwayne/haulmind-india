@@ -79,6 +79,16 @@ try {
   assert.ok((await pdf.arrayBuffer()).byteLength > 2000);
   step('LR bilty PDF');
 
+  // cash box can't go below zero: a ₹20000 cash advance with an empty TPR box is blocked
+  r = await api('POST', '/challans', { fromBranch: byCode.TPR._id, toBranch: byCode.LDH._id, lrIds: [a.data.lr._id, b.data.lr._id], vehicleNo: 'TN 39 AB 1234', lorryHire: 45000, advancePaid: 20000 });
+  assert.equal(r.status, 400);
+  assert.match(r.message, /cannot pay/);
+  r = await api('GET', '/money-accounts');
+  const tprCash = r.data.items.find((x) => x.type === 'cash' && x.branch?.code === 'TPR');
+  r = await api('PUT', `/money-accounts/${tprCash._id}`, { ...tprCash, branch: byCode.TPR._id, openingBalance: 25000 });
+  assert.equal(r.status, 200, r.message);
+  step('cash advance above cash-box balance blocked; TPR opening cash ₹25000 entered');
+
   // dispatch a + b to Ludhiana hub (b is a transfer through the hub)
   r = await api('POST', '/challans', { fromBranch: byCode.TPR._id, toBranch: byCode.LDH._id, lrIds: [a.data.lr._id, b.data.lr._id], vehicleNo: 'TN 39 AB 1234', driverName: 'Ravi', lorryHire: 45000, advancePaid: 20000 });
   assert.equal(r.status, 201, r.message);
@@ -268,8 +278,8 @@ try {
   const accounts = r.data.items;
   const cashOf = (code) => accounts.find((a) => a.type === 'cash' && a.branch?.code === code);
   assert.ok(cashOf('TPR') && cashOf('LDH'), 'every branch has a cash box');
-  // TPR cash so far: − lorry hire advance 20000 (ch1) − broker paid 100 in cash
-  assert.equal(cashOf('TPR').balance, -20100);
+  // TPR cash so far: 25000 opening − lorry hire advance 20000 (ch1) − broker paid 100 in cash
+  assert.equal(cashOf('TPR').balance, 4900);
   // LDH cash: + TO PAY collected at delivery (3070)
   assert.equal(cashOf('LDH').balance, 3070);
   // bank receipt (2350, UTR123) went to the auto-created main bank account
@@ -289,10 +299,10 @@ try {
   });
   assert.equal(paid.status, 201, paid.message);
   r = await api('GET', `/cashbook?account=${cashOf('TPR')._id}&from=2000-01-01`);
-  assert.equal(r.data.closing, -20100 + 600);
+  assert.equal(r.data.closing, 4900 + 600);
   await api('POST', `/lrs/${paid.data.lr._id}/cancel`, { reason: 'test' });
   r = await api('GET', `/cashbook?account=${cashOf('TPR')._id}&from=2000-01-01`);
-  assert.equal(r.data.closing, -20100);
+  assert.equal(r.data.closing, 4900);
   step('PAID LR posts ₹600 to TPR cash, cancel reverses it');
 
   // vouchers at LDH
@@ -304,6 +314,9 @@ try {
   assert.equal(r.status, 201, r.message);
   r = await api('POST', '/vouchers', { type: 'contra', branch: byCode.LDH._id, amount: 2000, account: cashOf('LDH')._id, toAccount: bank._id, narration: 'Cash deposited' });
   assert.equal(r.status, 201, r.message);
+  r = await api('POST', '/vouchers', { type: 'expense', branch: byCode.LDH._id, head: 'Salary', amount: 50000, mode: 'cash' });
+  assert.equal(r.status, 400); // more than the LDH cash box holds
+  assert.match(r.message, /cannot pay/);
   const wrong = await api('POST', '/vouchers', { type: 'expense', branch: byCode.LDH._id, head: 'Electricity', amount: 999, mode: 'cash' });
   r = await api('POST', `/vouchers/${wrong.data.refId}/cancel`, { reason: 'entered twice' });
   assert.equal(r.status, 200, r.message);

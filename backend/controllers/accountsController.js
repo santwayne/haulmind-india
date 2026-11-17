@@ -9,7 +9,7 @@ import { audit } from '../services/auditService.js';
 import { notify } from '../services/notificationService.js';
 import { calendarDays } from '../jobs/reminderJob.js';
 import { billPdf, receiptPdf, ledgerPdf } from '../services/pdfService.js';
-import { postCash, reverseCash } from '../services/financeService.js';
+import { postCash, reverseCash, assertFunds } from '../services/financeService.js';
 import { r2, billableFilter, billableAmount, partyBalance, unbilledAmount, refreshBill, outstandingReport, claimBill, releaseBills } from '../services/accountService.js';
 
 const oid = (x) => new mongoose.Types.ObjectId(String(x));
@@ -408,6 +408,7 @@ export const payBroker = ah(async (req, res) => {
   if (!broker) throw new AppError(404, 'Broker not found');
   const amount = r2(b.amount);
   if (amount <= 0) throw new AppError(400, 'Amount must be more than zero');
+  await assertFunds({ accountId: b.account, branchId: b.branch, mode: b.mode || 'cash', amount });
   const e = await LedgerEntry.create({
     account: 'broker', broker: broker._id, date: b.date ? new Date(b.date) : new Date(), type: 'broker_payment',
     ref: b.reference, branch: b.branch, debit: amount, mode: b.mode || 'cash',
