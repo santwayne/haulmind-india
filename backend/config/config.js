@@ -32,6 +32,10 @@ export const config = {
   WA_TOKEN: process.env.WA_TOKEN,
   WA_PHONE_ID: process.env.WA_PHONE_ID,
   WA_LANG: process.env.WA_LANG || 'hi',
+  // WhatsApp webhook (/api/v1/webhooks/whatsapp): verify token typed into Meta, and the Meta app secret
+  // used to check X-Hub-Signature-256 on every call
+  WA_VERIFY_TOKEN: process.env.WA_VERIFY_TOKEN || '',
+  WA_APP_SECRET: process.env.WA_APP_SECRET || '',
   MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY,
   MSG91_SENDER: process.env.MSG91_SENDER,
   BACKUP_DIR: process.env.BACKUP_DIR || './backups',
