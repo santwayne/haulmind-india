@@ -24,19 +24,26 @@ export const AuditLog = mongoose.model('AuditLog', auditSchema);
 const notificationSchema = new mongoose.Schema(
   {
     channel: { type: String, enum: ['whatsapp', 'sms', 'log'], default: 'log' },
-    event: String, // lr_booked, lr_unloaded, lr_delivered, dispatch_alert, payment_reminder
-    to: String,
+    // out = we sent it; in = customer messaged the business number (WhatsApp webhook)
+    direction: { type: String, enum: ['out', 'in'], default: 'out' },
+    event: String, // lr_booked, lr_unloaded, lr_delivered, dispatch_alert, payment_reminder, incoming
+    to: String, // for direction "in" this is the sender's number
+    senderName: String, // WhatsApp profile name of an incoming sender
     party: { type: ObjectId, ref: 'Party' },
     lr: { type: ObjectId, ref: 'LR' },
     message: String,
     // logged = provider is "log": saved here only, NOT delivered to the customer
-    status: { type: String, enum: ['queued', 'sent', 'logged', 'failed', 'skipped'], default: 'queued' },
+    // delivered / read come from the WhatsApp webhook; received = incoming message
+    status: { type: String, enum: ['queued', 'sent', 'delivered', 'read', 'logged', 'failed', 'skipped', 'received'], default: 'queued' },
     error: String,
     providerId: String,
+    deliveredAt: Date,
+    readAt: Date,
   },
   { timestamps: true }
 );
 notificationSchema.index({ createdAt: -1 });
+notificationSchema.index({ providerId: 1 }, { sparse: true });
 export const Notification = mongoose.model('Notification', notificationSchema);
 
 // In-app alert for a branch (e.g. "truck PB10 dispatched to you with 14 LRs")

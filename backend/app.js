@@ -15,7 +15,11 @@ app.set('trust proxy', 1);
 app.use(compression());
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: config.CORS_ORIGIN === '*' ? '*' : config.CORS_ORIGIN.split(','), credentials: false }));
-app.use(express.json({ limit: '5mb' })); // signature images come as data URLs
+app.use(express.json({
+  limit: '5mb', // signature images come as data URLs
+  // keep the exact bytes for webhook signature checks (Meta signs the raw body)
+  verify: (req, res, buf) => { if (req.originalUrl.startsWith('/api/v1/webhooks/')) req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true }));
 if (config.NODE_ENV !== 'test') app.use(morgan(config.NODE_ENV === 'production' ? 'combined' : 'dev'));
 

@@ -19,6 +19,10 @@ const start = async () => {
   if (!['whatsapp', 'msg91'].includes(config.NOTIFY_PROVIDER)) {
     console.warn(`⚠️  NOTIFY_PROVIDER=${config.NOTIFY_PROVIDER}: WhatsApp/SMS are only logged, nobody receives them.`);
   }
+  if (config.NOTIFY_PROVIDER === 'whatsapp') {
+    if (!config.WA_VERIFY_TOKEN) console.warn('⚠️  WA_VERIFY_TOKEN is empty – Meta cannot verify the webhook /api/v1/webhooks/whatsapp (no delivered/read status, no replies).');
+    if (!config.WA_APP_SECRET) console.warn('⚠️  WA_APP_SECRET is empty – WhatsApp webhook calls are accepted WITHOUT signature check. Set it from Meta app → Settings → Basic → App secret.');
+  }
   await connectDB();
   await ensureDefaultHeads();
   // Earlier builds saved "log"-mode messages as "sent". They were never delivered – correct them once.

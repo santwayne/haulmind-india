@@ -139,5 +139,9 @@ Keep Atlas snapshots on as well. Restore a day's file backup with `cd backend &&
 - Real route rates (Masters → Route rates)
 - TCL logo on LR/challan/DC PDFs (`services/pdfService.js`); their own colour via `PDF_ACCENT` in `.env`
 - WhatsApp: approve 4 templates in Meta (`hm_lr_booked`, `hm_lr_arrived`, `hm_lr_delivered`, `hm_payment_reminder`), set `NOTIFY_PROVIDER=whatsapp`
+- WhatsApp webhook (delivered / read ticks + customer replies in Audit & messages → WhatsApp / SMS):
+  Meta app → WhatsApp → Configuration → Callback URL `https://haulmindin.wayneesolutions.com/api/v1/webhooks/whatsapp`,
+  Verify token = `WA_VERIFY_TOKEN` from `backend/.env`, subscribe to the `messages` field.
+  Also set `WA_APP_SECRET` (Meta app → App settings → Basic → App secret) so only real Meta calls are accepted.
 - SMS: DLT templates in MSG91, set `NOTIFY_PROVIDER=msg91`
 - Turn on MongoDB Atlas backups in addition to the 5 AM file backup

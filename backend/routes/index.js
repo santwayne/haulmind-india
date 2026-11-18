@@ -13,6 +13,7 @@ import * as fin from '../controllers/financeController.js';
 import * as imp from '../controllers/importController.js';
 import { runBackup } from '../jobs/backupJob.js';
 import { runReminders } from '../jobs/reminderJob.js';
+import { verifyWhatsApp, receiveWhatsApp } from '../controllers/webhookController.js';
 import { ah, ok } from '../utils/http.js';
 
 export const router = Router();
@@ -20,6 +21,9 @@ export const router = Router();
 // ── public ──
 router.post('/auth/login', login);
 router.get('/public/track/:lrNo', lr.publicTrack);
+// Meta WhatsApp webhook – callback URL https://<domain>/api/v1/webhooks/whatsapp
+router.get('/webhooks/whatsapp', verifyWhatsApp);
+router.post('/webhooks/whatsapp', receiveWhatsApp);
 
 // ── everything below needs login ──
 router.use(authMiddleware);

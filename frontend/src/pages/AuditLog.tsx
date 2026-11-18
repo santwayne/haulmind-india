@@ -51,7 +51,7 @@ function Messages() {
   return (
     <>
       <Select allowClear placeholder="All" value={status} onChange={setStatus} className="mb-3 min-w-[140px]"
-        options={['sent', 'logged', 'failed', 'skipped', 'queued'].map((x) => ({ value: x, label: x === 'logged' ? 'logged (not sent)' : x }))} />
+        options={['sent', 'delivered', 'read', 'received', 'logged', 'failed', 'skipped', 'queued'].map((x) => ({ value: x, label: x === 'logged' ? 'logged (not sent)' : x === 'received' ? 'received (customer reply)' : x }))} />
       {data?.items?.some((r: any) => r.channel === 'log') && (
         <Alert className="mb-3" type="warning" showIcon
           message="WhatsApp / SMS is not connected yet"
@@ -62,8 +62,8 @@ function Messages() {
         pagination={{ current: page, total: data?.total, pageSize: 50, onChange: setPage, showSizeChanger: false }}
         columns={[
           { title: 'When', dataIndex: 'createdAt', render: dt, width: 150 },
-          { title: 'Event', dataIndex: 'event', width: 140 },
-          { title: 'To', dataIndex: 'to', width: 130 },
+          { title: 'Event', dataIndex: 'event', width: 140, render: (v, r: any) => (r.direction === 'in' ? <Tag color="blue">↩ reply</Tag> : v) },
+          { title: 'To / From', dataIndex: 'to', width: 150, render: (v, r: any) => (r.direction === 'in' ? <span title="Sender">{r.senderName ? `${r.senderName} · ` : ''}{v}</span> : v) },
           { title: 'Via', dataIndex: 'channel', width: 90 },
           { title: 'Message', dataIndex: 'message' },
           {
@@ -71,7 +71,11 @@ function Messages() {
             // older rows from "log" mode were saved as "sent" – they were never delivered either
             render: (v, r: any) => (r.channel === 'log' && (v === 'sent' || v === 'logged')
               ? <Tag color="orange" title="Only saved – WhatsApp/SMS provider not connected">logged – not sent</Tag>
-              : <Tag color={v === 'sent' ? 'green' : v === 'failed' ? 'red' : 'default'} title={r.error}>{v}</Tag>),
+              : <Tag
+                  color={v === 'read' ? 'cyan' : v === 'delivered' || v === 'sent' ? 'green' : v === 'received' ? 'blue' : v === 'failed' ? 'red' : 'default'}
+                  title={r.error || (r.readAt ? `Read ${dt(r.readAt)}` : r.deliveredAt ? `Delivered ${dt(r.deliveredAt)}` : undefined)}>
+                  {v}
+                </Tag>),
           },
         ]}
       />
@@ -102,7 +106,7 @@ export default function AuditLog() {
         )}
       </div>
       <div className="panel">
-        <Tabs items={[{ key: 'a', label: 'Who changed what', children: <Audit /> }, { key: 'm', label: 'WhatsApp / SMS sent', children: <Messages /> }]} />
+        <Tabs items={[{ key: 'a', label: 'Who changed what', children: <Audit /> }, { key: 'm', label: 'WhatsApp / SMS', children: <Messages /> }]} />
       </div>
     </div>
   );
